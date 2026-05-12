@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
-  PieChart, Pie, LineChart, Line, CartesianGrid,
 } from "recharts";
 import {
   Users, Trophy, TrendingUp, GraduationCap,
@@ -305,30 +304,6 @@ export function OverviewStats({ refresh }: { refresh?: number }) {
       ready: ds.filter(s => getStudentPct(s) >= 0.70).length,
     };
   }).sort((a, b) => b.avg - a.avg).slice(0, 8);
-
-  // Score distribution buckets
-  const buckets = [
-    { label: "900+",     value: students.filter(s => s.hireScore >= 900).length,                          color: "#059669" },
-    { label: "800–899",  value: students.filter(s => s.hireScore >= 800 && s.hireScore < 900).length,     color: "#2563eb" },
-    { label: "700–799",  value: students.filter(s => s.hireScore >= 700 && s.hireScore < 800).length,     color: "#7c3aed" },
-    { label: "600–699",  value: students.filter(s => s.hireScore >= 600 && s.hireScore < 700).length,     color: "#d97706" },
-    { label: "500–599",  value: students.filter(s => s.hireScore >= 500 && s.hireScore < 600).length,     color: "#f97316" },
-    { label: "<500",     value: students.filter(s => s.hireScore < 500).length,                           color: "#dc2626" },
-  ].filter(d => d.value > 0);
-
-  // Tier sub-score averages for bar chart
-  const subScores = [
-    { name: "Acad Agg",   value: avg("academicAggregate"),    max: 100, color: TC.academic },
-    { name: "Arrears",    value: avg("standingArrears"),      max: 50,  color: TC.academic },
-    { name: "Aptitude",   value: avg("aptitudeTotal"),        max: 150, color: TC.cognitive },
-    { name: "Comm",       value: avg("communicationTotal"),   max: 150, color: TC.cognitive },
-    { name: "Coding Pr.", value: avg("codingPractice"),       max: 125, color: TC.technical },
-    { name: "Coding As.", value: avg("codingAssessment"),     max: 175, color: TC.technical },
-    { name: "Codeathon",  value: avg("codeathonHackathon"),   max: 50,  color: TC.technical },
-    { name: "Projects",   value: Math.round((avg("miniProjects") + avg("fullLengthProjectScore"))), max: 50, color: TC.technical },
-    { name: "Global Cert",value: avg("globalCertScore"),      max: 100, color: TC.industry },
-    { name: "Other Cert", value: avg("otherCertScore"),       max: 50,  color: TC.industry },
-  ];
 
   // Radar — normalize each tier against its actual avg max
   const radarData = [
