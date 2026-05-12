@@ -10,7 +10,7 @@ import {
 import {
   Users, Trophy, TrendingUp, GraduationCap,
   Brain, Code, Award, Target, Zap, Medal, ChevronLeft, ChevronRight,
-  AlertTriangle, Star, ArrowUp, ArrowDown, BarChart3, Download, Columns,
+  Star, ArrowUp, ArrowDown, BarChart3, Download, Columns,
 } from "lucide-react";
 import { StoredStudent } from "@/lib/db";
 import { useChartColors } from "@/hooks/use-chart-colors";
@@ -371,14 +371,6 @@ export function OverviewStats({ refresh }: { refresh?: number }) {
     }
   });
 
-  // Arrears breakdown
-  const arrearsData = [
-    { name: "0 Arrears", value: students.filter(s => s.noOfArrears === 0).length, color: "#059669" },
-    { name: "1 Arrear",  value: students.filter(s => s.noOfArrears === 1).length, color: "#d97706" },
-    { name: "2 Arrears", value: students.filter(s => s.noOfArrears === 2).length, color: "#f97316" },
-    { name: "3+",        value: students.filter(s => s.noOfArrears >= 3).length,  color: "#dc2626" },
-  ].filter(d => d.value > 0);
-
   // Leaderboard
   const ranked = [...students].sort((a, b) => b.hireScore - a.hireScore);
   const displayRanked = leaderMode === "top" ? ranked : [...ranked].reverse();
@@ -620,68 +612,37 @@ export function OverviewStats({ refresh }: { refresh?: number }) {
         </div>
       </div>
 
-      {/* ── Arrears Distribution + Dept Performance ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-
-        {/* Arrears distribution */}
-        <div className="bg-card rounded-2xl border border-border shadow-sm p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-            <p className="text-sm font-bold text-foreground">Arrears Distribution</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <ResponsiveContainer width="55%" height={160}>
-              <PieChart>
-                <Pie data={arrearsData} cx="50%" cy="50%" innerRadius={36} outerRadius={62} dataKey="value" paddingAngle={3}>
-                  {arrearsData.map((d, i) => <Cell key={i} fill={d.color} />)}
-                </Pie>
-                <Tooltip content={<TT />} />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="flex-1 space-y-2">
-              {arrearsData.map(d => (
-                <div key={d.name} className="flex items-center gap-2">
-                  <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-                  <span className="text-[11px] text-muted-foreground flex-1">{d.name}</span>
-                  <span className="text-[11px] font-bold text-foreground tabular-nums">{d.value}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+      {/* ── Dept Performance ── */}
+      <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
+        <div className="flex items-center gap-2 px-5 py-3.5 border-b border-border">
+          <GraduationCap className="h-4 w-4 text-muted-foreground" />
+          <p className="text-sm font-bold text-foreground">Department Performance</p>
         </div>
-
-        {/* Dept table */}
-        <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
-          <div className="flex items-center gap-2 px-5 py-3.5 border-b border-border">
-            <GraduationCap className="h-4 w-4 text-muted-foreground" />
-            <p className="text-sm font-bold text-foreground">Department Performance</p>
-          </div>
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="bg-muted/40 border-b border-border">
-                <th className="text-left px-5 py-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Dept</th>
-                <th className="text-center px-3 py-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Students</th>
-                <th className="text-center px-3 py-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Avg Score</th>
-                <th className="text-center px-3 py-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Ready</th>
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="bg-muted/40 border-b border-border">
+              <th className="text-left px-5 py-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Dept</th>
+              <th className="text-center px-3 py-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Students</th>
+              <th className="text-center px-3 py-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Avg Score</th>
+              <th className="text-center px-3 py-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Ready</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/50">
+            {deptStats.map((d, i) => (
+              <tr key={d.name} className="hover:bg-muted/30 transition-colors">
+                <td className="px-5 py-2.5 font-medium text-foreground flex items-center gap-2">
+                  {i === 0 && <Star className="h-3 w-3 text-amber-400 shrink-0" />}
+                  {d.name}
+                </td>
+                <td className="px-3 py-2.5 text-center text-muted-foreground">{d.count}</td>
+                <td className="px-3 py-2.5 text-center font-bold tabular-nums" style={{ color: d.avg >= 700 ? "#059669" : d.avg >= 500 ? "#d97706" : "#dc2626" }}>{d.avg}</td>
+                <td className="px-3 py-2.5 text-center">
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ color: "#059669", backgroundColor: "#ecfdf5" }}>{d.ready}</span>
+                </td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-border/50">
-              {deptStats.map((d, i) => (
-                <tr key={d.name} className="hover:bg-muted/30 transition-colors">
-                  <td className="px-5 py-2.5 font-medium text-foreground flex items-center gap-2">
-                    {i === 0 && <Star className="h-3 w-3 text-amber-400 shrink-0" />}
-                    {d.name}
-                  </td>
-                  <td className="px-3 py-2.5 text-center text-muted-foreground">{d.count}</td>
-                  <td className="px-3 py-2.5 text-center font-bold tabular-nums" style={{ color: d.avg >= 700 ? "#059669" : d.avg >= 500 ? "#d97706" : "#dc2626" }}>{d.avg}</td>
-                  <td className="px-3 py-2.5 text-center">
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ color: "#059669", backgroundColor: "#ecfdf5" }}>{d.ready}</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       {/* ── Leaderboard ── */}
