@@ -287,7 +287,10 @@ export default function StudentDetailPage() {
     <div className="min-h-screen" style={{ background: "#f2f2f2" }}>
 
       {/* ── Top toolbar ── */}
-      <div className="bg-white border-b px-4 py-2.5 flex items-center justify-end print:hidden">
+      <div className="bg-white border-b px-4 py-2.5 flex items-center justify-between print:hidden">
+        <div className="cursor-pointer" onClick={() => router.push("/")}>
+          <img src="/logo.png" alt="HIRE Logo" className="h-8 w-auto" />
+        </div>
         <button onClick={handleExportPage} disabled={exportingPage}
           className="flex items-center gap-2 text-xs border rounded-lg px-3 py-1.5 transition-colors disabled:opacity-60"
           style={{ color: RED, borderColor: `${RED}55`, background: `${RED}0d` }}>

@@ -71,10 +71,7 @@ export default function PublicSharePage({ params }: { params: Promise<{ token: s
     <div className="p-4 sm:p-8 max-w-[1600px] mx-auto min-h-screen">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary shadow-sm">
-            <span className="text-primary-foreground font-bold">H</span>
-          </div>
-          <h1 className="font-bold text-lg tracking-tight">HIRE Score Dashboard</h1>
+          <img src="/logo.png" alt="HIRE Logo" className="h-10 w-auto" />
         </div>
         <div className="text-xs font-semibold text-muted-foreground px-3 py-1 rounded-full bg-muted">
           Read Only View

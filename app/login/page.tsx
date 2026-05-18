@@ -38,12 +38,9 @@ export default function LoginPage() {
     <div className="min-h-screen bg-background flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         {/* Logo */}
-        <div className="flex flex-col items-center mb-8">
-          <div className="h-14 w-14 rounded-2xl bg-primary flex items-center justify-center shadow-lg mb-4">
-            <GraduationCap className="h-7 w-7 text-primary-foreground" />
-          </div>
-          <h1 className="text-xl font-black tracking-tight">HIRE Score</h1>
-          <p className="text-xs text-muted-foreground mt-1">Admin Dashboard</p>
+        <div className="flex flex-col items-center mb-8 text-center">
+          <img src="/logo.png" alt="HIRE Logo" className="h-20 w-auto mb-2" />
+          <p className="text-xs text-muted-foreground">Admin Dashboard</p>
         </div>
 
         {/* Card */}

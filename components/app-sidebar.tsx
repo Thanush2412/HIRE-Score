@@ -65,13 +65,7 @@ export function AppSidebar({
       {/* Logo */}
       <SidebarHeader className="px-4 py-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary shadow-sm">
-            <GraduationCap className="h-5 w-5 text-primary-foreground" />
-          </div>
-          <div className="leading-tight">
-            <p className="text-sm font-bold tracking-tight">HIRE Score</p>
-            <p className="text-[11px] text-muted-foreground">Management System</p>
-          </div>
+          <img src="/logo.png" alt="HIRE Logo" className="h-10 w-auto" />
         </div>
       </SidebarHeader>
 
