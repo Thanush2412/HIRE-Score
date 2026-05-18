@@ -39,7 +39,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8 text-center">
-          <img src="/logo.png" alt="HIRE Logo" className="h-20 w-auto mb-2" />
+          <img src="/logo.png" alt="HIRE Logo" className="h-20 w-auto mb-2 dark:bg-white dark:rounded dark:p-1" />
           <p className="text-xs text-muted-foreground">Admin Dashboard</p>
         </div>
 

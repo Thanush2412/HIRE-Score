@@ -290,7 +290,7 @@ export default function StudentDetailPage() {
       {/* ── Top toolbar ── */}
       <div className="bg-white border-b px-4 py-2.5 flex items-center justify-between print:hidden">
         <div className="cursor-pointer" onClick={() => router.push("/")}>
-          <img src="/logo.png" alt="HIRE Logo" className="h-8 w-auto" />
+          <img src="/logo.png" alt="HIRE Logo" className="h-8 w-auto dark:bg-white dark:rounded dark:p-0.5" />
         </div>
         <button onClick={handleExportPage} disabled={exportingPage}
           className="flex items-center gap-2 text-xs border rounded-lg px-3 py-1.5 transition-colors disabled:opacity-60"

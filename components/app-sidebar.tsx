@@ -65,7 +65,7 @@ export function AppSidebar({
       {/* Logo */}
       <SidebarHeader className="px-4 py-4">
         <div className="flex items-center gap-3">
-          <img src="/logo.png" alt="HIRE Logo" className="h-10 w-auto" />
+          <img src="/logo.png" alt="HIRE Logo" className="h-10 w-auto dark:bg-white dark:rounded dark:p-0.5" />
         </div>
       </SidebarHeader>
 
