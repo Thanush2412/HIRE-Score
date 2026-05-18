@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { StoredStudent } from "@/lib/db";
 import { Download, Loader2 } from "lucide-react";
 
@@ -218,6 +218,7 @@ function TierCard({ tier, s }: { tier: typeof TIER_META[0]; s: StoredStudent }) 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function StudentDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const [student, setStudent] = useState<StoredStudent | null>(null);
   const [allStudents, setAllStudents] = useState<StoredStudent[]>([]);
   const [loading, setLoading] = useState(true);
