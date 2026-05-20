@@ -12,10 +12,10 @@ const TIER_META = [
     label: "Academic & Regulatory",
     max: 150,
     rows: [
-      { label: "X Marks",            raw: "xMarks" as const,           score: "xScore" as const              },
-      { label: "Xii Marks",          raw: "xiiMarks" as const,         score: "xiiScore" as const            },
-      { label: "UG Percentage",      raw: "ugPercentage" as const,     score: "ugScore" as const             },
-      { label: "No. of Arrears",     raw: "noOfArrears" as const,      score: "noOfArrearsScore" as const    },
+      { label: "X Marks", raw: "xMarks" as const, score: "xScore" as const },
+      { label: "Xii Marks", raw: "xiiMarks" as const, score: "xiiScore" as const },
+      { label: "UG Percentage", raw: "ugPercentage" as const, score: "ugScore" as const },
+      { label: "No. of Arrears", raw: "noOfArrears" as const, score: "noOfArrearsScore" as const },
       { label: "History of Arrears", raw: "historyOfArrears" as const, score: "historyArrearsScore" as const },
     ],
   },
@@ -25,12 +25,12 @@ const TIER_META = [
     label: "Technical Proficiency",
     max: 400,
     rows: [
-      { label: "Leetcode Rank",        raw: "leetcodeRank" as const,       score: "codingPractice" as const         },
-      { label: "FOP Assessment",       raw: "fopAssessment" as const,      score: "fopAssessment" as const          },
-      { label: "Internal Codeathon",   raw: "internalCodeathon" as const,  score: "internalCodeathon" as const      },
-      { label: "GitHub Projects",      raw: "githubProjects" as const,     score: "miniProjects" as const           },
+      { label: "Leetcode Rank", raw: "leetcodeRank" as const, score: "codingPractice" as const },
+      { label: "FOP Assessment", raw: "fopAssessment" as const, score: "fopAssessment" as const },
+      { label: "Internal Codeathon", raw: "internalCodeathon" as const, score: "internalCodeathon" as const },
+      { label: "GitHub Projects", raw: "githubProjects" as const, score: "miniProjects" as const },
       { label: "Full Length Projects", raw: "fullLengthProjects" as const, score: "fullLengthProjectScore" as const },
-      { label: "DSA",                  raw: "dsaAssessment" as const,      score: "dsaAssessment" as const          },
+      { label: "DSA", raw: "dsaAssessment" as const, score: "dsaAssessment" as const },
     ],
   },
   {
@@ -39,15 +39,15 @@ const TIER_META = [
     label: "Cognitive & Linguistic",
     max: 300,
     rows: [
-      { label: "Quants",           raw: "quants" as const,         score: "quantsScore" as const      },
-      { label: "Logical",          raw: "logical" as const,        score: "logicalScore" as const     },
-      { label: "Verbal",           raw: "verbal" as const,         score: "verbalScore" as const      },
-      { label: "CEFR A1 Grammar",  raw: "cefrA1Grammar" as const,  score: "cefrA1Score" as const      },
-      { label: "CEFR A2 Grammar",  raw: "cefrA2Grammar" as const,  score: "cefrA2Score" as const      },
+      { label: "Quants", raw: "quants" as const, score: "quantsScore" as const },
+      { label: "Logical", raw: "logical" as const, score: "logicalScore" as const },
+      { label: "Verbal", raw: "verbal" as const, score: "verbalScore" as const },
+      { label: "CEFR A1 Grammar", raw: "cefrA1Grammar" as const, score: "cefrA1Score" as const },
+      { label: "CEFR A2 Grammar", raw: "cefrA2Grammar" as const, score: "cefrA2Score" as const },
       { label: "EF SET Listening", raw: "efSetListening" as const, score: "efListeningScore" as const },
-      { label: "EF SET Speaking",  raw: "efSetSpeaking" as const,  score: "efSpeakingScore" as const  },
-      { label: "EF SET Reading",   raw: "efSetReading" as const,   score: "efReadingScore" as const   },
-      { label: "EF SET Writing",   raw: "efSetWriting" as const,   score: "efWritingScore" as const   },
+      { label: "EF SET Speaking", raw: "efSetSpeaking" as const, score: "efSpeakingScore" as const },
+      { label: "EF SET Reading", raw: "efSetReading" as const, score: "efReadingScore" as const },
+      { label: "EF SET Writing", raw: "efSetWriting" as const, score: "efWritingScore" as const },
     ],
   },
   {
@@ -57,7 +57,7 @@ const TIER_META = [
     max: 150,
     rows: [
       { label: "Global Certification", raw: "globalCertification" as const, score: "globalCertScore" as const },
-      { label: "Other Certifications", raw: "otherCertifications" as const, score: "otherCertScore" as const  },
+      { label: "Other Certifications", raw: "otherCertifications" as const, score: "otherCertScore" as const },
     ],
   },
 ];
@@ -176,12 +176,12 @@ export function buildPdfHtmlV1(s: StoredStudent, allStudents: StoredStudent[]): 
 
   // Stats bar items
   const statsItems: { val: string; lbl: string; sub: string }[] = [
-    { val: `#${rank}`,           lbl: "Overall Rank",                        sub: `of ${allStudents.length}` },
-    { val: `${percentile}th`,    lbl: "Percentile",                          sub: "" },
+    { val: `#${rank}`, lbl: "Overall Rank", sub: `of ${allStudents.length}` },
+    { val: `${percentile}th`, lbl: "Percentile", sub: "" },
     ...(deptPeers.length > 0 ? [
-      { val: `#${deptRank}`,     lbl: `Dept Rank of ${deptPeers.length + 1}`, sub: "" },
-      { val: String(deptAvg),    lbl: "Dept Avg",                            sub: "" },
-      { val: String(collegeAvg), lbl: "College Avg",                         sub: "" },
+      { val: `#${deptRank}`, lbl: `Dept Rank of ${deptPeers.length + 1}`, sub: "" },
+      { val: String(deptAvg), lbl: "Dept Avg", sub: "" },
+      { val: String(collegeAvg), lbl: "College Avg", sub: "" },
     ] : []),
   ];
 
@@ -198,10 +198,10 @@ export function buildPdfHtmlV1(s: StoredStudent, allStudents: StoredStudent[]): 
   // Student detail items
   const detailItems: [string, string][] = [
     ["Department", s.department],
-    ["Year",       s.year],
-    ["UG %",       `${s.ugPercentage}%`],
+    ["Year", s.year],
+    ["UG %", `${s.ugPercentage}%`],
     ...(s.pgPercentage != null ? [["PG %", `${s.pgPercentage}%`] as [string, string]] : []),
-    ["Arrears",    s.noOfArrears === 0 ? "None" : String(s.noOfArrears)],
+    ["Arrears", s.noOfArrears === 0 ? "None" : String(s.noOfArrears)],
   ];
 
   const detailHtml = detailItems.map(([lbl, val]) => `
@@ -314,8 +314,8 @@ export function buildPdfHtmlV1(s: StoredStudent, allStudents: StoredStudent[]): 
           <span style="font-size:10px;font-weight:800;color:${RED};text-transform:uppercase;letter-spacing:0.05em;line-height:1.3;display:block">PLACEMENT<br/>STATUS</span>
           <span style="font-size:22px;font-weight:800;color:${RED};line-height:1.1;display:block">
             ${statusLabel.includes(" ")
-              ? `${esc(statusLabel.split(" ")[0])}<br/>${esc(statusLabel.split(" ").slice(1).join(" "))}`
-              : esc(statusLabel)}
+      ? `${esc(statusLabel.split(" ")[0])}<br/>${esc(statusLabel.split(" ").slice(1).join(" "))}`
+      : esc(statusLabel)}
           </span>
         </div>
 
@@ -365,12 +365,7 @@ export function buildPdfHtmlV1(s: StoredStudent, allStudents: StoredStudent[]): 
       <div style="width:100px;height:1px;background:#d1d5db"></div>
       <span style="font-size:8px;color:#9ca3af;font-weight:600;text-transform:uppercase;letter-spacing:0.1em">Authorised Signatory</span>
     </div>
-    <!-- Centre: official seal label -->
-    <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
-      <div style="width:64px;height:64px;border-radius:9999px;border:1.5px dashed #d1d5db;display:flex;align-items:center;justify-content:center">
-        <span style="font-size:7px;color:#d1d5db;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;text-align:center;line-height:1.4">Official<br/>Seal</span>
-      </div>
-    </div>
+    
     <!-- Right: date placeholder -->
     <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
       <div style="width:100px;height:1px;background:#d1d5db"></div>
