@@ -1,4 +1,4 @@
-﻿// Pure TypeScript HTML string builder for V1 layout â€” matches the red-themed V1 UI.
+// Pure TypeScript HTML string builder for V1 layout â€” matches the red-themed V1 UI.
 // No React, no react-dom/server. Safe to import in Next.js API route handlers.
 import { StoredStudent } from "./db";
 
@@ -323,7 +323,7 @@ export function buildPdfHtmlV1(s: StoredStudent, allStudents: StoredStudent[]): 
         <div style="display:flex;flex-direction:column;justify-content:space-between;padding:14px 16px 14px 8px;flex:1">
           <span style="font-size:18px;font-weight:700;color:${RED};line-height:1">Hire Score</span>
           <div>
-            <span style="display:block;font-size:48px;font-weight:900;color:${RED};line-height:1;letter-spacing:-1.5px;font-variant-numeric:tabular-nums">${s.hireScore}</span>
+            <span style="display:block;font-size:${String(s.hireScore).length > 4 ? '38px' : '48px'};font-weight:900;color:${RED};line-height:1;letter-spacing:-1.5px;font-variant-numeric:tabular-nums">${s.hireScore}</span>
             <span style="display:inline-block;margin-top:5px;font-size:10px;color:#fff;background:${RED};border-radius:5px;padding:3px 8px;font-weight:600;letter-spacing:0.02em">of ${TOTAL_MAX}</span>
           </div>
         </div>
@@ -349,7 +349,7 @@ export function buildPdfHtmlV1(s: StoredStudent, allStudents: StoredStudent[]): 
     <!-- Overall Score -->
     <div style="width:175px;background:#fff;border-radius:22px;box-shadow:0 2px 10px rgba(0,0,0,0.07);padding:20px 16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px">
       <p style="font-size:15px;font-weight:700;color:#1a1a1a;margin:0;text-align:center">Overall Score</p>
-      <p style="font-size:68px;font-weight:900;color:${RED};margin:0;line-height:1;font-variant-numeric:tabular-nums;text-align:center">${s.hireScore}</p>
+      <p style="font-size:${String(s.hireScore).length > 4 ? '44px' : '68px'};font-weight:900;color:${RED};margin:0;line-height:1;font-variant-numeric:tabular-nums;text-align:center">${s.hireScore}</p>
       <div style="background:${RED};border-radius:7px;padding:4px 14px">
         <span style="font-size:12px;color:#fff;font-weight:700">of ${TOTAL_MAX}</span>
       </div>

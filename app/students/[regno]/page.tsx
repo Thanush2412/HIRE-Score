@@ -447,7 +447,7 @@ export default function StudentDetailPage() {
                   <div>
                     <span style={{
                       display: "block",
-                      fontSize: 48, fontWeight: 900, color: RED,
+                      fontSize: String(s.hireScore).length > 4 ? 38 : 48, fontWeight: 900, color: RED,
                       lineHeight: 1, letterSpacing: "-1.5px", fontVariantNumeric: "tabular-nums",
                     }}>
                       {s.hireScore}
@@ -578,7 +578,7 @@ export default function StudentDetailPage() {
               </p>
               {/* Score number */}
               <p style={{
-                fontSize: 68, fontWeight: 900, color: RED,
+                fontSize: String(s.hireScore).length > 4 ? 44 : 68, fontWeight: 900, color: RED,
                 margin: 0, lineHeight: 1,
                 fontVariantNumeric: "tabular-nums", textAlign: "center",
               }}>
