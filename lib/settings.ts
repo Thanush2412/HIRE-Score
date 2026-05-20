@@ -10,13 +10,13 @@ import { getSupabase } from "./db";
 
 export interface Course {
   name: string;
+  degreeType: "ug" | "pg";
   years: string[];
 }
 
 export interface College {
   name: string;
   stream: "engineering" | "arts";
-  degreeType: "ug" | "pg";
   courses: Course[];
 }
 
@@ -72,7 +72,7 @@ export async function upsertCollegesFromImport(
 
       let college = settings.colleges.find(c => c.name === collegeName);
       if (!college) {
-        college = { name: collegeName, stream, degreeType: "ug", courses: [] };
+        college = { name: collegeName, stream, courses: [] };
         settings.colleges.push(college);
       } else {
         college.stream = stream;
@@ -82,7 +82,7 @@ export async function upsertCollegesFromImport(
 
       let course = college.courses.find(c => c.name === dept);
       if (!course) {
-        course = { name: dept, years: [] };
+        course = { name: dept, degreeType: "ug", years: [] };
         college.courses.push(course);
       }
 

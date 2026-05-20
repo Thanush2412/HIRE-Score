@@ -21,9 +21,9 @@ interface Settings {
   colleges: Array<{
     name: string;
     stream: "engineering" | "arts";
-    degreeType: "ug" | "pg";
     courses: Array<{
       name: string;
+      degreeType: "ug" | "pg";
       years: string[];
     }>;
   }>;
@@ -363,18 +363,24 @@ export function StudentForm({ onSuccess }: { onSuccess?: () => void }) {
   const availableYears = selectedCourse?.years || [];
 
   const handleCollegeChange = (college: string | null) => {
-    const col = settings.colleges?.find(c => c.name === college);
     setForm(p => ({
       ...p,
       college: college || "",
       course: "",
       year: "",
-      degreeType: col?.degreeType || "ug"
+      degreeType: "ug"
     }));
   };
 
   const handleCourseChange = (course: string | null) => {
-    setForm(p => ({ ...p, course: course || "", year: "" }));
+    const col = settings.colleges?.find(c => c.name === form.college);
+    const co = col?.courses?.find(c => c.name === course);
+    setForm(p => ({
+      ...p,
+      course: course || "",
+      year: "",
+      degreeType: co?.degreeType || "ug"
+    }));
   };
 
   const handleFileUpload = async (level: "x" | "xii", files: FileList | null) => {
