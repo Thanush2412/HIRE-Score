@@ -46,6 +46,7 @@ export default function SettingsPage() {
   const [loaded, setLoaded] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const initialCollegesRef = useRef<string>("");
 
   // ── Load ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -73,6 +74,11 @@ export default function SettingsPage() {
           };
         });
         setColleges(cols);
+        initialCollegesRef.current = JSON.stringify(cols.map(c => ({
+          name: c.name,
+          stream: c.stream,
+          courses: c.courses.map(co => ({ name: co.name, degreeType: co.degreeType, years: [...co.years] })),
+        })));
         if (cols.length > 0) {
           setSelectedCollegeId(cols[0].id);
         }
@@ -87,6 +93,19 @@ export default function SettingsPage() {
   // ── Auto Save Debounce ────────────────────────────────────────────────────
   useEffect(() => {
     if (!loaded) return;
+
+    // Deep compare name, stream, courses, degreeType, and years to check if anything changed
+    const currentSerialized = JSON.stringify(colleges.map(c => ({
+      name: c.name,
+      stream: c.stream,
+      courses: c.courses.map(co => ({ name: co.name, degreeType: co.degreeType, years: [...co.years] })),
+    })));
+
+    if (currentSerialized === initialCollegesRef.current) {
+      // No structural changes, do not schedule auto-save
+      return;
+    }
+
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
 
     setStatus("saving");
@@ -142,6 +161,13 @@ export default function SettingsPage() {
       await Promise.all(renamePromises);
 
       if (!res.ok) throw new Error("Save settings failed");
+
+      const savedSerialized = JSON.stringify(colleges.map(c => ({
+        name: c.name,
+        stream: c.stream,
+        courses: c.courses.map(co => ({ name: co.name, degreeType: co.degreeType, years: [...co.years] })),
+      })));
+      initialCollegesRef.current = savedSerialized;
 
       setColleges(prev =>
         prev.map(c => ({
@@ -378,6 +404,7 @@ export default function SettingsPage() {
           };
         });
         setColleges(cols);
+        initialCollegesRef.current = "";
         if (cols.length > 0) {
           setSelectedCollegeId(cols[0].id);
         }
