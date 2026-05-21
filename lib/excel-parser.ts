@@ -20,6 +20,13 @@ function parseNullableNum(val: unknown): number | null {
   return isNaN(n) ? null : n;
 }
 
+function parseRankNum(val: unknown): number {
+  if (val === null || val === undefined || val === "") return 0;
+  const s = String(val).replace(/,/g, "").trim();
+  const n = Number(s);
+  return isNaN(n) ? 0 : n;
+}
+
 // Column indices (0-based, row index 2 = first data row)
 const C = {
   name: 0, regNo: 1, dept: 2, year: 3,
@@ -57,7 +64,7 @@ function rowToStudent(row: unknown[]): StudentData | null {
     efSetSpeaking: parseCEFR(row[C.efSpeak]),
     efSetReading: parseCEFR(row[C.efRead]),
     efSetWriting: parseCEFR(row[C.efWrite]),
-    leetcodeRank: String(row[C.leetcode] ?? ""),
+    leetcodeRank: parseRankNum(row[C.leetcode]),
     leetcodeUrl: "", // Not in Excel, will be filled manually
     githubUrl: "", // Not in Excel, will be filled manually
     fopAssessment: parseNum(row[C.fop]),

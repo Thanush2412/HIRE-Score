@@ -33,7 +33,7 @@ export interface StudentData {
   efSetWriting: string;
 
   // Tier 3 – Technical raw
-  leetcodeRank: string;
+  leetcodeRank: number;
   leetcodeUrl: string;
   githubUrl: string;
   fopAssessment: number;

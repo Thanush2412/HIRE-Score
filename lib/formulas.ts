@@ -74,13 +74,9 @@ function calcAptitudeComponent(raw: number): number {
   return Math.min(Math.max(raw, 0), 50);
 }
 
-// ── Coding Practice (125) — Excel stores ranks as Indian-format text; numeric compare fails → 10
-function calcCodingPractice(rankStr: string): number {
-  const s = String(rankStr).trim();
-  // Indian comma-format text (e.g. "18,72,342"): Excel numeric comparisons fail → returns 10
-  if (s.includes(",")) return 10;
-  const rank = parseInt(s, 10);
-  if (isNaN(rank)) return 0;
+// ── Coding Practice (125) — Accepts clean numerical rank
+function calcCodingPractice(rank: number): number {
+  if (!rank || isNaN(rank)) return 0;
   if (rank > 1   && rank < 40000)    return 125;
   if (rank >= 40000  && rank < 150000)   return 115;
   if (rank >= 150000 && rank < 225000)   return 95;
