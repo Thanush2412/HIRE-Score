@@ -106,7 +106,9 @@ function tierCard(tier: typeof TIER_META[0], s: StoredStudent): string {
   const rowsHtml = tier.rows.map((row) => {
     const raw = s[row.raw];
     const scored = s[row.score] as number;
-    const displayVal = typeof raw === "string" && raw !== ""
+    const displayVal = row.raw === "leetcodeRank"
+      ? (raw && raw !== 0 ? raw : "—")
+      : typeof raw === "string" && raw !== ""
       ? raw
       : scored === 0 ? "00" : scored;
     return `

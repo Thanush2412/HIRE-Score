@@ -192,7 +192,9 @@ function TierCard({ tier, s }: { tier: typeof TIER_META[0]; s: StoredStudent }) 
               {tier.rows.map((row, i) => {
                 const raw = s[row.raw];
                 const scored = s[row.score] as number;
-                const displayVal = typeof raw === "string" && raw !== ""
+                const displayVal = row.raw === "leetcodeRank"
+                  ? (raw && raw !== 0 ? raw : "—")
+                  : typeof raw === "string" && raw !== ""
                   ? raw
                   : scored === 0 ? "00" : scored;
                 return (

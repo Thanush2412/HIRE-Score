@@ -89,12 +89,20 @@ export function getSupabase(): SupabaseClient {
 
 // ── Row ↔ StoredStudent helpers ───────────────────────────────────────────────
 
+function parseRankNum(v: unknown): number {
+  if (v === null || v === undefined || v === "") return 0;
+  const s = String(v).replace(/,/g, "").trim();
+  const n = Number(s);
+  return isNaN(n) ? 0 : n;
+}
+
 function fromRow(row: any): StoredStudent {
   return {
     ...row,
     id: row.id,
     college: row.college || "",
     createdAt: row.created_at,
+    leetcodeRank: parseRankNum(row.leetcodeRank),
     // The view already maps underscored columns to camelCase for the StudentData part
   };
 }
@@ -265,7 +273,7 @@ export async function upsertStudent(
     }),
     sb.from("student_technical").upsert({
       student_id: studentId,
-      leetcode_rank: computed.leetcodeRank,
+      leetcode_rank: computed.leetcodeRank ? String(computed.leetcodeRank) : "",
       leetcode_url: computed.leetcodeUrl,
       github_url: computed.githubUrl,
       fop_assessment: computed.fopAssessment,
@@ -558,7 +566,7 @@ export async function logSubmission(
     ef_set_reading: payload.efSetReading,
     ef_set_writing: payload.efSetWriting,
     cert_urls: payload.certUrls,
-    leetcode_rank: payload.leetcodeRank,
+    leetcode_rank: payload.leetcodeRank ? String(payload.leetcodeRank) : "",
     leetcode_url: payload.leetcodeUrl,
     github_url: payload.githubUrl,
     fop_assessment: payload.fopAssessment,

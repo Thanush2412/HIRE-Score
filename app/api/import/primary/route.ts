@@ -25,17 +25,24 @@ function parseNullableNum(v: unknown): number | null {
   if (v === null || v === undefined || String(v).toUpperCase() === "NA" || v === "") return null;
   const n = Number(v); return isNaN(n) ? null : n;
 }
+function parseRankNum(v: unknown): number {
+  if (v === null || v === undefined || v === "") return 0;
+  const s = String(v).replace(/,/g, "").trim();
+  const n = Number(s);
+  return isNaN(n) ? 0 : n;
+}
 function parseCEFR(v: unknown): string {
   const s = String(v ?? "").trim().toUpperCase();
   return ["A1", "A2", "B1", "B2", "C1", "C2"].includes(s) ? s : "";
 }
 
 const CEFR_FIELDS = new Set(["cefrA1Grammar","cefrA2Grammar","efSetListening","efSetSpeaking","efSetReading","efSetWriting"]);
-const STRING_FIELDS = new Set(["name","registrationNumber","department","year","phone","email","college","stream","leetcodeRank","leetcodeUrl","githubUrl"]);
+const STRING_FIELDS = new Set(["name","registrationNumber","department","year","phone","email","college","stream","leetcodeUrl","githubUrl"]);
 
 function castValue(key: string, raw: unknown): unknown {
   if (CEFR_FIELDS.has(key)) return parseCEFR(raw);
   if (key === "pgPercentage") return parseNullableNum(raw);
+  if (key === "leetcodeRank") return parseRankNum(raw);
   if (key === "stream") {
     const s = String(raw ?? "").trim().toLowerCase();
     return s === "arts" || s === "art" ? "arts" : s === "engineering" || s === "engg" || s === "eng" ? "engineering" : "";
@@ -53,7 +60,7 @@ function blankStudent(): Record<string, unknown> {
     quants: 0, logical: 0, verbal: 0,
     cefrA1Grammar: "", cefrA2Grammar: "",
     efSetListening: "", efSetSpeaking: "", efSetReading: "", efSetWriting: "",
-    leetcodeRank: "",
+    leetcodeRank: 0,
     fopAssessment: 0, dsaAssessment: 0,
     internalCodeathon: 0, externalCodeathon: 0,
     githubProjects: 0, fullLengthProjects: 0,

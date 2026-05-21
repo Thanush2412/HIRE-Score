@@ -87,7 +87,7 @@ function toStudentData(f: FormState): StudentData & { college: string } {
     cefrA1Grammar: f.cefrA1Grammar, cefrA2Grammar: f.cefrA2Grammar,
     efSetListening: f.efSetListening, efSetSpeaking: f.efSetSpeaking,
     efSetReading: f.efSetReading, efSetWriting: f.efSetWriting,
-    leetcodeRank: f.leetcodeRank.trim(),
+    leetcodeRank: ni(f.leetcodeRank),
     leetcodeUrl: f.leetcodeUrl.trim(),
     githubUrl: f.githubUrl.trim(),
     fopAssessment: n(f.fopAssessment), dsaAssessment: n(f.dsaAssessment),
@@ -1332,6 +1332,7 @@ function Step4Technical({
         <div>
           <FieldLabel tooltip="Your current LeetCode rank">LeetCode Rank</FieldLabel>
           <Input
+            type="number"
             value={form.leetcodeRank}
             onChange={(e) => set("leetcodeRank", e.target.value)}
             placeholder="e.g. 45000"

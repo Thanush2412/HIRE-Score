@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS student_communication (
 -- Tier 3: Technical
 CREATE TABLE IF NOT EXISTS student_technical (
     student_id UUID PRIMARY KEY REFERENCES students(id) ON DELETE CASCADE,
-    leetcode_rank TEXT,
+    leetcode_rank NUMERIC,
     leetcode_url TEXT,
     github_url TEXT,
     fop_assessment NUMERIC DEFAULT 0,
@@ -287,7 +287,7 @@ CREATE TABLE IF NOT EXISTS student_submissions_log (
     cert_urls JSONB,
 
     -- Tier 3: Technical raw
-    leetcode_rank TEXT,
+    leetcode_rank NUMERIC,
     leetcode_url TEXT,
     github_url TEXT,
     fop_assessment NUMERIC,

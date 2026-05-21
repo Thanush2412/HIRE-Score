@@ -7,6 +7,13 @@ function parseNum(v: unknown): number {
   const n = Number(v); return isNaN(n) ? 0 : n;
 }
 
+function parseRankNum(v: unknown): number {
+  if (v === null || v === undefined || v === "") return 0;
+  const s = String(v).replace(/,/g, "").trim();
+  const n = Number(s);
+  return isNaN(n) ? 0 : n;
+}
+
 const SECONDARY_KEYS = new Set([
   "quants", "logical", "verbal",
   "leetcodeRank", "fopAssessment", "dsaAssessment",
@@ -77,7 +84,7 @@ export async function POST(req: NextRequest) {
         const col = Number(colStr);
         if (col >= row.length) continue;
         patch[fieldKey] = fieldKey === "leetcodeRank"
-          ? String(row[col] ?? "").trim()
+          ? parseRankNum(row[col])
           : parseNum(row[col]);
       }
       if (Object.keys(patch).length > 0) secMap.set(regNo, patch);
