@@ -25,8 +25,7 @@ export interface StudentData {
   verbal: number;
 
   // Tier 2 – Communication raw
-  cefrA1Grammar: string;
-  cefrA2Grammar: string;
+  cefrGrammar: string;
   efSetListening: string;
   efSetSpeaking: string;
   efSetReading: string;
@@ -65,8 +64,7 @@ export interface StudentData {
   aptitudeTotal: number;    // col 39 – Aptitude (150)
 
   // Tier 2 Communication scores
-  cefrA1Score: number;      // col 40
-  cefrA2Score: number;      // col 41
+  cefrGrammarScore: number;  // col 40
   efListeningScore: number; // col 42
   efSpeakingScore: number;  // col 43
   efReadingScore: number;   // col 44
@@ -104,8 +102,7 @@ export interface StudentData {
   xMarksheetUrl?: string;
   xiiMarksheetUrl?: string;
   certUrls?: {
-    cefrA1?: string;
-    cefrA2?: string;
+    cefrGrammar?: string;
     efListening?: string;
     efSpeaking?: string;
     efReading?: string;

@@ -69,8 +69,7 @@ function getMissingData(s: StudentData) {
   const missing: string[] = [];
   if (!s.phone) missing.push("Phone");
   if (!s.email) missing.push("Email");
-  if (!s.cefrA1Grammar) missing.push("CEFR A1");
-  if (!s.cefrA2Grammar) missing.push("CEFR A2");
+  if (!s.cefrGrammar) missing.push("CEFR Grammar");
   if (!s.efSetListening) missing.push("EF Listen");
   if (!s.efSetSpeaking) missing.push("EF Speak");
   if (!s.efSetReading) missing.push("EF Read");
@@ -115,7 +114,7 @@ export function StudentsTable({ refresh }: { refresh?: number }) {
     // Academic
     "X%", "XII%", "UG%", "PG%", "Arrears", "Hist. Arrears",
     // Language
-    "CEFR A1", "CEFR A2", "EF Listen", "EF Speak", "EF Read", "EF Write",
+    "CEFR Grammar", "EF Listen", "EF Speak", "EF Read", "EF Write",
     // Technical
     "LeetCode URL", "GitHub URL", "Leetcode Rank", "FOP", "DSA",
     "Int. Codeathon", "Ext. Codeathon",
@@ -271,8 +270,7 @@ export function StudentsTable({ refresh }: { refresh?: number }) {
                         </TableCell>
 
                         {/* Language */}
-                        <TableCell className="text-center"><CefrBadge val={s.cefrA1Grammar} /></TableCell>
-                        <TableCell className="text-center"><CefrBadge val={s.cefrA2Grammar} /></TableCell>
+                        <TableCell className="text-center"><CefrBadge val={s.cefrGrammar} /></TableCell>
                         <TableCell className="text-center"><CefrBadge val={s.efSetListening} /></TableCell>
                         <TableCell className="text-center"><CefrBadge val={s.efSetSpeaking} /></TableCell>
                         <TableCell className="text-center"><CefrBadge val={s.efSetReading} /></TableCell>

@@ -9,7 +9,7 @@ const PRIMARY_KEYS = new Set([
   "phone", "email", "college", "stream",
   "xMarks", "xiiMarks", "ugPercentage", "pgPercentage",
   "noOfArrears", "historyOfArrears",
-  "cefrA1Grammar", "cefrA2Grammar",
+  "cefrGrammar",
   "efSetListening", "efSetSpeaking", "efSetReading", "efSetWriting",
   "leetcodeRank", "leetcodeUrl", "githubUrl",
   "fopAssessment", "dsaAssessment",
@@ -36,7 +36,7 @@ function parseCEFR(v: unknown): string {
   return ["A1", "A2", "B1", "B2", "C1", "C2"].includes(s) ? s : "";
 }
 
-const CEFR_FIELDS = new Set(["cefrA1Grammar","cefrA2Grammar","efSetListening","efSetSpeaking","efSetReading","efSetWriting"]);
+const CEFR_FIELDS = new Set(["cefrGrammar","efSetListening","efSetSpeaking","efSetReading","efSetWriting"]);
 const STRING_FIELDS = new Set(["name","registrationNumber","department","year","phone","email","college","stream","leetcodeUrl","githubUrl"]);
 
 function castValue(key: string, raw: unknown): unknown {
@@ -58,7 +58,7 @@ function blankStudent(): Record<string, unknown> {
     xMarks: 0, xiiMarks: 0, ugPercentage: 0, pgPercentage: null,
     noOfArrears: 0, historyOfArrears: 0,
     quants: 0, logical: 0, verbal: 0,
-    cefrA1Grammar: "", cefrA2Grammar: "",
+    cefrGrammar: "",
     efSetListening: "", efSetSpeaking: "", efSetReading: "", efSetWriting: "",
     leetcodeRank: 0,
     fopAssessment: 0, dsaAssessment: 0,
@@ -68,7 +68,7 @@ function blankStudent(): Record<string, unknown> {
     xScore: 0, xiiScore: 0, ugScore: 0, academicAggregate: 0,
     noOfArrearsScore: 0, historyArrearsScore: 0, standingArrears: 0,
     quantsScore: 0, logicalScore: 0, verbalScore: 0, aptitudeTotal: 0,
-    cefrA1Score: 0, cefrA2Score: 0, efListeningScore: 0, efSpeakingScore: 0,
+    cefrGrammarScore: 0, efListeningScore: 0, efSpeakingScore: 0,
     efReadingScore: 0, efWritingScore: 0, communicationTotal: 0,
     codingPractice: 0, codingAssessment: 0, codeathonHackathon: 0,
     miniProjects: 0, fullLengthProjectScore: 0, globalCertScore: 0, otherCertScore: 0,
@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
       0: "name", 1: "registrationNumber", 2: "department", 3: "year",
       4: "xMarks", 5: "xiiMarks", 6: "ugPercentage", 7: "pgPercentage",
       8: "noOfArrears", 9: "historyOfArrears",
-      13: "cefrA1Grammar", 14: "cefrA2Grammar",
+      13: "cefrGrammar", 14: "cefrGrammar",
       15: "efSetListening", 16: "efSetSpeaking", 17: "efSetReading", 18: "efSetWriting",
       19: "leetcodeRank", 20: "fopAssessment", 21: "dsaAssessment",
       22: "internalCodeathon", 23: "externalCodeathon",
@@ -126,7 +126,14 @@ export async function POST(req: NextRequest) {
       for (const [colIdxStr, fieldKey] of Object.entries(effectiveMapping)) {
         if (fieldKey === "skip" || !PRIMARY_KEYS.has(fieldKey)) continue;
         const colIdx = Number(colIdxStr);
-        if (colIdx < row.length) student[fieldKey] = castValue(fieldKey, row[colIdx]);
+        if (colIdx < row.length) {
+          const val = castValue(fieldKey, row[colIdx]);
+          if (fieldKey === "cefrGrammar") {
+            if (val) student[fieldKey] = val;
+          } else {
+            student[fieldKey] = val;
+          }
+        }
       }
       if (!student.name && !student.registrationNumber) continue;
       records.push(student as unknown as StudentData);

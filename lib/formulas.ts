@@ -135,13 +135,12 @@ export function computeScores(s: StudentData): StudentData {
   const aptitudeTotal = quantsScore + logicalScore + verbalScore;
 
   // Tier 2 Communication
-  const cefrA1Score      = cefrScore(s.cefrA1Grammar, 25);
-  const cefrA2Score      = cefrScore(s.cefrA2Grammar, 25);
+  const cefrGrammarScore = cefrScore(s.cefrGrammar, 25) * 2;
   const efListeningScore = cefrScore(s.efSetListening, 25);
   const efSpeakingScore  = cefrScore(s.efSetSpeaking, 25);
   const efReadingScore   = cefrScore(s.efSetReading, 25);
   const efWritingScore   = cefrScore(s.efSetWriting, 25);
-  const communicationTotal = cefrA1Score + cefrA2Score + efListeningScore + efSpeakingScore + efReadingScore + efWritingScore;
+  const communicationTotal = cefrGrammarScore + efListeningScore + efSpeakingScore + efReadingScore + efWritingScore;
 
   // Tier 3 Technical
   const codingPractice       = calcCodingPractice(s.leetcodeRank);
@@ -165,7 +164,7 @@ export function computeScores(s: StudentData): StudentData {
     xScore, xiiScore, ugScore, academicAggregate,
     noOfArrearsScore, historyArrearsScore, standingArrears,
     quantsScore, logicalScore, verbalScore, aptitudeTotal,
-    cefrA1Score, cefrA2Score, efListeningScore, efSpeakingScore, efReadingScore, efWritingScore,
+    cefrGrammarScore, efListeningScore, efSpeakingScore, efReadingScore, efWritingScore,
     communicationTotal,
     codingPractice, codingAssessment, codeathonHackathon, miniProjects,
     fullLengthProjectScore, globalCertScore, otherCertScore,

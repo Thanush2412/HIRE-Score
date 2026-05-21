@@ -42,8 +42,7 @@ const COLUMNS: ColDef[] = [
   { key: "quants",                  label: "Quants",                          group: "Tier 2: Aptitude" },
   { key: "logical",                 label: "Logical",                         group: "Tier 2: Aptitude" },
   { key: "verbal",                  label: "Verbal",                          group: "Tier 2: Aptitude" },
-  { key: "cefrA1Grammar",           label: "CEFR A1 Grammar",                 group: "Tier 2: Language" },
-  { key: "cefrA2Grammar",           label: "CEFR A2 Grammar",                 group: "Tier 2: Language" },
+  { key: "cefrGrammar",             label: "CEFR Grammar",                    group: "Tier 2: Language" },
   { key: "efSetListening",          label: "EF SET Listening",                group: "Tier 2: Language" },
   { key: "efSetSpeaking",           label: "EF SET Speaking",                 group: "Tier 2: Language" },
   { key: "efSetReading",            label: "EF SET Reading",                  group: "Tier 2: Language" },
@@ -70,8 +69,7 @@ const COLUMNS: ColDef[] = [
   { key: "logicalScore",            label: "Logical Score (50)",              group: "Computed Scores", computed: true },
   { key: "verbalScore",             label: "Verbal Score (50)",               group: "Computed Scores", computed: true },
   { key: "aptitudeTotal",           label: "Aptitude Total (150)",            group: "Computed Scores", computed: true },
-  { key: "cefrA1Score",             label: "CEFR A1 Score",                   group: "Computed Scores", computed: true },
-  { key: "cefrA2Score",             label: "CEFR A2 Score",                   group: "Computed Scores", computed: true },
+  { key: "cefrGrammarScore",        label: "CEFR Grammar Score (50)",         group: "Computed Scores", computed: true },
   { key: "efListeningScore",        label: "EF Listening Score",              group: "Computed Scores", computed: true },
   { key: "efSpeakingScore",         label: "EF Speaking Score",               group: "Computed Scores", computed: true },
   { key: "efReadingScore",          label: "EF Reading Score",                group: "Computed Scores", computed: true },
@@ -91,7 +89,7 @@ const COLUMNS: ColDef[] = [
   { key: "hireScore",               label: "HIRE Score (year-adj.)",      group: "Final Totals", computed: true },
 ];
 
-const CEFR_KEYS = new Set(["cefrA1Grammar","cefrA2Grammar","efSetListening","efSetSpeaking","efSetReading","efSetWriting"]);
+const CEFR_KEYS = new Set(["cefrGrammar","efSetListening","efSetSpeaking","efSetReading","efSetWriting"]);
 
 function getYearMax(year: string, stream?: string | null): number {
   const y = (year ?? "").toLowerCase().trim();

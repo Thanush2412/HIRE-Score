@@ -36,7 +36,7 @@ type FormState = {
   degreeType: "ug" | "pg";
   xMarks: string; xiiMarks: string; ugPercentage: string; pgPercentage: string;
   noOfArrears: string; historyOfArrears: string;
-  cefrA1Grammar: string; cefrA2Grammar: string;
+  cefrGrammar: string;
   efSetListening: string; efSetSpeaking: string; efSetReading: string; efSetWriting: string;
   leetcodeRank: string; leetcodeUrl: string; githubUrl: string;
   fopAssessment: string; dsaAssessment: string;
@@ -55,7 +55,7 @@ const blank: FormState = {
   degreeType: "ug",
   xMarks: "", xiiMarks: "", ugPercentage: "", pgPercentage: "",
   noOfArrears: "", historyOfArrears: "",
-  cefrA1Grammar: "", cefrA2Grammar: "",
+  cefrGrammar: "",
   efSetListening: "", efSetSpeaking: "", efSetReading: "", efSetWriting: "",
   leetcodeRank: "", leetcodeUrl: "", githubUrl: "",
   fopAssessment: "", dsaAssessment: "",
@@ -84,7 +84,7 @@ function toStudentData(f: FormState): StudentData & { college: string } {
     pgPercentage: pgValue,
     noOfArrears: ni(f.noOfArrears), historyOfArrears: ni(f.historyOfArrears),
     quants: 0, logical: 0, verbal: 0,
-    cefrA1Grammar: f.cefrA1Grammar, cefrA2Grammar: f.cefrA2Grammar,
+    cefrGrammar: f.cefrGrammar,
     efSetListening: f.efSetListening, efSetSpeaking: f.efSetSpeaking,
     efSetReading: f.efSetReading, efSetWriting: f.efSetWriting,
     leetcodeRank: ni(f.leetcodeRank),
@@ -95,8 +95,8 @@ function toStudentData(f: FormState): StudentData & { college: string } {
     githubProjects: n(f.githubProjects), fullLengthProjects: n(f.fullLengthProjects),
     globalCertification: n(f.globalCertification), otherCertifications: n(f.otherCertifications),
     xScore: 0, xiiScore: 0, ugScore: 0, academicAggregate: 0, noOfArrearsScore: 0, historyArrearsScore: 0,
-    standingArrears: 0, quantsScore: 0, logicalScore: 0, verbalScore: 0, aptitudeTotal: 0, cefrA1Score: 0,
-    cefrA2Score: 0, efListeningScore: 0, efSpeakingScore: 0, efReadingScore: 0, efWritingScore: 0,
+    standingArrears: 0, quantsScore: 0, logicalScore: 0, verbalScore: 0, aptitudeTotal: 0, cefrGrammarScore: 0,
+    efListeningScore: 0, efSpeakingScore: 0, efReadingScore: 0, efWritingScore: 0,
     communicationTotal: 0, codingPractice: 0, codingAssessment: 0, codeathonHackathon: 0, miniProjects: 0,
     fullLengthProjectScore: 0, globalCertScore: 0, otherCertScore: 0, academicRegulatory: 0,
     cognitiveLinguistic: 0, technicalProficiency: 0, industryValidation: 0, hireScore: 0,
@@ -469,7 +469,7 @@ export function StudentForm({ onSuccess }: { onSuccess?: () => void }) {
         return true;
       case 3:
         const cefrFields: [string, string][] = [
-          ["cefrA1Grammar", "CEFR A1 Grammar"], ["cefrA2Grammar", "CEFR A2 Grammar"],
+          ["cefrGrammar", "CEFR Grammar"],
           ["efSetListening", "EF SET Listening"], ["efSetSpeaking", "EF SET Speaking"],
           ["efSetReading", "EF SET Reading"], ["efSetWriting", "EF SET Writing"],
         ];
@@ -1156,8 +1156,7 @@ function Step3Language({
   onCertFileUpload: (key: string, file: File) => Promise<void>;
 }) {
   const cefrFields: [keyof FormState, string][] = [
-    ["cefrA1Grammar", "CEFR A1 Grammar"],
-    ["cefrA2Grammar", "CEFR A2 Grammar"],
+    ["cefrGrammar", "CEFR Grammar"],
   ];
 
   const efSetFields: [keyof FormState, string][] = [
