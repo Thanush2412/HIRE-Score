@@ -66,7 +66,7 @@ const blank: FormState = {
 
 function toStudentData(f: FormState): StudentData & { college: string } {
   const n = (v: string, def = 0) => { const x = parseFloat(v); return isNaN(x) ? def : x; };
-  const ni = (v: string, def = 0) => { const x = parseInt(v); return isNaN(x) ? def : x; };
+  const ni = (v: string, def = 0) => { const x = parseInt(v.replace(/[,~\s]/g, "")); return isNaN(x) ? def : x; };
   const pgValue = f.pgPercentage.trim().toUpperCase() === "NA" || f.pgPercentage.trim() === ""
     ? null
     : n(f.pgPercentage);
@@ -1332,10 +1332,10 @@ function Step4Technical({
         <div>
           <FieldLabel tooltip="Your current LeetCode rank">LeetCode Rank</FieldLabel>
           <Input
-            type="number"
+            type="text"
             value={form.leetcodeRank}
-            onChange={(e) => set("leetcodeRank", e.target.value)}
-            placeholder="e.g. 45000"
+            onChange={(e) => set("leetcodeRank", e.target.value.replace(/[^0-9,~\s]/g, ""))}
+            placeholder="e.g. ~45,000"
             className="h-10 font-mono"
           />
         </div>

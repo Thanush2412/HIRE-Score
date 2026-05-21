@@ -27,7 +27,7 @@ function parseNullableNum(v: unknown): number | null {
 }
 function parseRankNum(v: unknown): number {
   if (v === null || v === undefined || v === "") return 0;
-  const s = String(v).replace(/,/g, "").trim();
+  const s = String(v).replace(/[,~\s]/g, "").trim();
   const n = Number(s);
   return isNaN(n) ? 0 : n;
 }
