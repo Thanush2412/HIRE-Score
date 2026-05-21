@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,9 +17,10 @@ import {
   AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { RefreshCw, Users, X, Upload, Trash2, BarChart2, Filter, ArrowUpDown, ArrowUp, ArrowDown, Download, Eye } from "lucide-react";
+import { RefreshCw, Users, X, Upload, Trash2, BarChart2, Filter, ArrowUpDown, ArrowUp, ArrowDown, Download, Eye, FileText } from "lucide-react";
 import { ImportDialog } from "@/components/import-dialog";
 import { StoredStudent } from "@/lib/db";
+import JSZip from "jszip";
 
 type ColDef = { key: keyof StoredStudent; label: string; group: string; computed?: boolean };
 
@@ -117,6 +118,270 @@ function getYearDenom(year: string, stream?: string): { max: number; academic: n
   return { max: 1000, academic: 150, cognitive: 300, technical: 400, industry: 150 };
 }
 
+interface ColumnFilterPopoverContentProps {
+  col: ColDef;
+  students: StoredStudent[];
+  activeFilter: string;
+  onApplyFilter: (val: string) => void;
+}
+
+function ColumnFilterPopoverContent({
+  col,
+  students,
+  activeFilter,
+  onApplyFilter,
+}: ColumnFilterPopoverContentProps) {
+  // Extract unique values
+  const uniqueValues = useMemo(() => {
+    const vals = Array.from(
+      new Set(students.map((s) => String(s[col.key] ?? "").trim()))
+    );
+    return vals.sort((a, b) => {
+      if (a === "") return -1;
+      if (b === "") return 1;
+      return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+    });
+  }, [students, col.key]);
+
+  const parseActiveFilter = (filter: string): string[] => {
+    if (!filter) return [];
+    if (filter.startsWith("[") && filter.endsWith("]")) {
+      try {
+        return JSON.parse(filter) as string[];
+      } catch {
+        return [filter];
+      }
+    }
+    // If it's a simple string, treat it as a contains query
+    return [`__contains__:${filter}`];
+  };
+
+  const initialSelected = useMemo(() => parseActiveFilter(activeFilter), [activeFilter]);
+
+  const [optionSearch, setOptionSearch] = useState(() => {
+    const containsFilters = initialSelected.filter(v => v.startsWith("__contains__:"));
+    if (containsFilters.length === 1 && initialSelected.length === 1) {
+      return containsFilters[0].slice(13);
+    }
+    return "";
+  });
+
+  const [selectedValues, setSelectedValues] = useState<Set<string>>(
+    () => new Set(initialSelected)
+  );
+
+  // Sync with activeFilter changes
+  useEffect(() => {
+    const parsed = parseActiveFilter(activeFilter);
+    setSelectedValues(new Set(parsed));
+    
+    const containsFilters = parsed.filter(v => v.startsWith("__contains__:"));
+    if (containsFilters.length === 1 && parsed.length === 1) {
+      setOptionSearch(containsFilters[0].slice(13));
+    } else if (parsed.length === 0) {
+      setOptionSearch("");
+    }
+  }, [activeFilter]);
+
+  // Filtered unique values for the list
+  const filteredUniqueValues = useMemo(() => {
+    return uniqueValues.filter((val) => {
+      const displayVal = val === "" ? "(Empty)" : val;
+      return displayVal.toLowerCase().includes(optionSearch.toLowerCase());
+    });
+  }, [uniqueValues, optionSearch]);
+
+  const activeContainsFilters = useMemo(() => {
+    return Array.from(selectedValues).filter(v => v.startsWith("__contains__:"));
+  }, [selectedValues]);
+
+  const handleApplyValues = (currSelected?: Set<string>) => {
+    const targetSet = currSelected || selectedValues;
+    const arr = Array.from(targetSet);
+    if (arr.length === 0) {
+      onApplyFilter("");
+    } else {
+      onApplyFilter(JSON.stringify(arr));
+    }
+  };
+
+  const handleToggleValue = (val: string) => {
+    const newSet = new Set(selectedValues);
+    if (newSet.has(val)) {
+      newSet.delete(val);
+    } else {
+      newSet.add(val);
+    }
+    setSelectedValues(newSet);
+  };
+
+  const handleSelectAll = () => {
+    const newSet = new Set(selectedValues);
+    filteredUniqueValues.forEach((val) => newSet.add(val));
+    setSelectedValues(newSet);
+  };
+
+  const handleDeselectAll = () => {
+    const newSet = new Set(selectedValues);
+    filteredUniqueValues.forEach((val) => newSet.delete(val));
+    activeContainsFilters.forEach((val) => newSet.delete(val));
+    setSelectedValues(newSet);
+  };
+
+  const handleClear = () => {
+    setOptionSearch("");
+    setSelectedValues(new Set());
+    onApplyFilter("");
+  };
+
+  const handleTextSearchApply = () => {
+    const query = optionSearch.trim();
+    const newSet = new Set(selectedValues);
+    if (query) {
+      newSet.add(`__contains__:${query}`);
+    }
+    setSelectedValues(newSet);
+    handleApplyValues(newSet);
+  };
+
+  return (
+    <div className="space-y-2.5">
+      {/* Title & Clear Action */}
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+          Filter: {col.label}
+        </p>
+        {activeFilter && (
+          <button
+            onClick={handleClear}
+            className="text-[10px] text-primary hover:underline font-bold"
+          >
+            Clear Filter
+          </button>
+        )}
+      </div>
+
+      {/* Unified Search Input */}
+      <div className="relative">
+        <Input
+          value={optionSearch}
+          onChange={(e) => setOptionSearch(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleTextSearchApply();
+          }}
+          placeholder="Search values or contains..."
+          className="h-8 text-xs focus-visible:ring-primary pr-8"
+          autoFocus
+        />
+        {optionSearch && (
+          <button
+            onClick={() => setOptionSearch("")}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground/60 hover:text-foreground p-0.5"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        )}
+      </div>
+
+      {/* Scrollable List */}
+      <div className="max-h-48 overflow-y-auto space-y-1 pr-1 border rounded-lg p-1 bg-muted/5">
+        {/* Active contains filters */}
+        {activeContainsFilters.map((containsVal) => {
+          const query = containsVal.slice(13);
+          return (
+            <label
+              key={containsVal}
+              className="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted/40 cursor-pointer text-xs transition-colors"
+            >
+              <input
+                type="checkbox"
+                checked={true}
+                onChange={() => handleToggleValue(containsVal)}
+                className="h-3.5 w-3.5 rounded-full text-primary border-muted focus:ring-primary cursor-pointer accent-primary"
+              />
+              <span className="truncate text-[11px] font-semibold text-primary">
+                🔍 Contains: "{query}"
+              </span>
+            </label>
+          );
+        })}
+
+        {/* Dynamic unchecked virtual Contains option if search input is filled and not already checked */}
+        {optionSearch.trim() && !selectedValues.has(`__contains__:${optionSearch.trim()}`) && (
+          <label
+            className="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted/40 cursor-pointer text-xs transition-colors"
+          >
+            <input
+              type="checkbox"
+              checked={false}
+              onChange={() => handleToggleValue(`__contains__:${optionSearch.trim()}`)}
+              className="h-3.5 w-3.5 rounded-full text-primary border-muted focus:ring-primary cursor-pointer accent-primary"
+            />
+            <span className="truncate text-[11px] font-semibold text-primary/70">
+              🔍 Contains: "{optionSearch.trim()}"
+            </span>
+          </label>
+        )}
+
+        {filteredUniqueValues.length === 0 && !optionSearch.trim() && activeContainsFilters.length === 0 && (
+          <p className="text-[10px] text-muted-foreground text-center py-4">No values found</p>
+        )}
+
+        {filteredUniqueValues.map((val) => {
+          const displayVal = val === "" ? "(Empty)" : val;
+          const isChecked = selectedValues.has(val);
+          return (
+            <label
+              key={val}
+              className="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted/40 cursor-pointer text-xs transition-colors"
+            >
+              <input
+                type="checkbox"
+                checked={isChecked}
+                onChange={() => handleToggleValue(val)}
+                className="h-3.5 w-3.5 rounded-full text-primary border-muted focus:ring-primary cursor-pointer accent-primary"
+              />
+              <span
+                className={`truncate text-[11px] ${
+                  val === "" ? "text-muted-foreground/75 italic" : "text-foreground font-medium"
+                }`}
+              >
+                {displayVal}
+              </span>
+            </label>
+          );
+        })}
+      </div>
+
+      {/* Control footer */}
+      <div className="flex items-center justify-between gap-2 pt-2 border-t mt-1">
+        <div className="flex gap-2">
+          <button
+            onClick={handleSelectAll}
+            className="text-[9px] text-muted-foreground hover:text-foreground font-bold cursor-pointer"
+          >
+            Select All
+          </button>
+          <span className="text-muted-foreground/30 text-[9px]">|</span>
+          <button
+            onClick={handleDeselectAll}
+            className="text-[9px] text-muted-foreground hover:text-foreground font-bold cursor-pointer"
+          >
+            Clear All
+          </button>
+        </div>
+        <Button
+          size="sm"
+          className="h-6 px-3 text-[10px] font-bold"
+          onClick={() => handleApplyValues()}
+        >
+          Apply
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function StudentsTab({ refresh, onImported }: { refresh?: number; onImported: () => void }) {
   const router = useRouter();
   const [students, setStudents] = useState<StoredStudent[]>([]);
@@ -173,6 +438,111 @@ export function StudentsTab({ refresh, onImported }: { refresh?: number; onImpor
   const [previewStudent, setPreviewStudent] = useState<StoredStudent | null>(null);
   const [previewPos, setPreviewPos] = useState({ x: 0, y: 0 });
 
+  // Bulk PDF generation state
+  const [bulkGenerating, setBulkGenerating] = useState(false);
+  const [bulkTotal, setBulkTotal] = useState(0);
+  const [bulkCurrent, setBulkCurrent] = useState(0);
+  const [bulkCurrentName, setBulkCurrentName] = useState("");
+  const [bulkErrors, setBulkErrors] = useState<string[]>([]);
+  const cancelBulkRef = useRef(false);
+
+  const handleBulkPdfDownload = async () => {
+    const targetStudents = selectedIds.size > 0
+      ? students.filter(s => selectedIds.has(s.id))
+      : filtered;
+
+    if (targetStudents.length === 0) return;
+
+    setBulkGenerating(true);
+    setBulkTotal(targetStudents.length);
+    setBulkCurrent(0);
+    setBulkCurrentName("");
+    setBulkErrors([]);
+    cancelBulkRef.current = false;
+
+    const zip = new JSZip();
+    let successCount = 0;
+
+    for (let i = 0; i < targetStudents.length; i++) {
+      if (cancelBulkRef.current) {
+        break;
+      }
+
+      const s = targetStudents[i];
+      setBulkCurrent(i + 1);
+      setBulkCurrentName(s.name);
+
+      try {
+        const res = await fetch(`/api/export-pdf/${s.id}`);
+        if (!res.ok) {
+          throw new Error(`Status ${res.status}: ${res.statusText}`);
+        }
+        const blob = await res.blob();
+        const safeName = s.name.replace(/[^a-zA-Z0-9_\-]/g, "_");
+        const filename = `HIRE_Score_${s.registrationNumber}_${safeName}.pdf`;
+        zip.file(filename, blob);
+        successCount++;
+      } catch (err: any) {
+        console.error(err);
+        setBulkErrors(prev => [...prev, `${s.name} (${s.registrationNumber}): ${err.message || err}`]);
+      }
+    }
+
+    if (successCount > 0) {
+      setBulkCurrentName("Creating ZIP package...");
+      try {
+        const content = await zip.generateAsync({ type: "blob" });
+        const url = URL.createObjectURL(content);
+        const a = document.createElement("a");
+        a.href = url;
+        
+        let zipName = "HIRE_Score_PDFs.zip";
+        let collegeName = "";
+        let deptName = "";
+
+        if (filters.college) {
+          if (filters.college.startsWith("[") && filters.college.endsWith("]")) {
+            try {
+              const colleges = JSON.parse(filters.college) as string[];
+              collegeName = colleges.map(c => c.startsWith("__contains__:") ? c.slice(13) : c).join("_");
+            } catch {}
+          } else {
+            collegeName = filters.college.startsWith("__contains__:") ? filters.college.slice(13) : filters.college;
+          }
+        }
+
+        if (filters.department) {
+          if (filters.department.startsWith("[") && filters.department.endsWith("]")) {
+            try {
+              const depts = JSON.parse(filters.department) as string[];
+              deptName = depts.map(d => d.startsWith("__contains__:") ? d.slice(13) : d).join("_");
+            } catch {}
+          } else {
+            deptName = filters.department.startsWith("__contains__:") ? filters.department.slice(13) : filters.department;
+          }
+        }
+
+        if (collegeName) {
+          const cleanCollege = collegeName.replace(/[^a-zA-Z0-9_\-]/g, "_");
+          if (deptName) {
+            const cleanDept = deptName.replace(/[^a-zA-Z0-9_\-]/g, "_");
+            zipName = `HIRE_Score_${cleanCollege}_${cleanDept}.zip`;
+          } else {
+            zipName = `HIRE_Score_${cleanCollege}.zip`;
+          }
+        }
+        
+        a.download = zipName;
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (err: any) {
+        setBulkErrors(prev => [...prev, `Failed to create ZIP: ${err.message || err}`]);
+      }
+    }
+
+    setBulkGenerating(false);
+  };
+
   const handleSort = (key: keyof StoredStudent) => {
     if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
     else { setSortKey(key); setSortDir("desc"); }
@@ -205,6 +575,26 @@ export function StudentsTab({ refresh, onImported }: { refresh?: number; onImpor
   const filtered = students.filter((s) =>
     COLUMNS.every(({ key }) => {
       const f = filters[key]; if (!f) return true;
+      if (f.startsWith("[") && f.endsWith("]")) {
+        try {
+          const vals = JSON.parse(f) as string[];
+          if (vals.length === 0) return true;
+          const studentVal = String(s[key] ?? "").trim();
+          return vals.some(v => {
+            if (v.startsWith("__contains__:")) {
+              const query = v.slice(13);
+              return studentVal.toLowerCase().includes(query.toLowerCase());
+            }
+            return studentVal.toLowerCase() === v.toLowerCase();
+          });
+        } catch {
+          // Fallback
+        }
+      }
+      if (f.startsWith("__contains__:")) {
+        const query = f.slice(13);
+        return String(s[key] ?? "").toLowerCase().includes(query.toLowerCase());
+      }
       return String(s[key] ?? "").toLowerCase().includes(f.toLowerCase());
     })
   );
@@ -315,6 +705,18 @@ export function StudentsTab({ refresh, onImported }: { refresh?: number; onImpor
           <Button variant="outline" size="sm" className="h-8 text-xs" onClick={exportCSV} disabled={filtered.length === 0}>
             <Download className="h-3.5 w-3.5 mr-1.5" /> Export CSV
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs"
+            onClick={handleBulkPdfDownload}
+            disabled={filtered.length === 0}
+          >
+            <FileText className="h-3.5 w-3.5 mr-1.5 text-primary" />
+            {selectedIds.size > 0
+              ? `Download Selected PDFs (${selectedIds.size})`
+              : `Download Filtered PDFs (${filtered.length})`}
+          </Button>
           <Button size="sm" className="h-8 text-xs"
             onClick={() => { setImportMode("primary"); setImportOpen(true); }}>
             <Upload className="h-3.5 w-3.5 mr-1.5" /> Primary Import
@@ -409,26 +811,12 @@ export function StudentsTab({ refresh, onImported }: { refresh?: number; onImpor
                               <Filter className="h-3 w-3" />
                             </PopoverTrigger>
                             <PopoverContent className="w-64 p-3" align="start">
-                              <div className="space-y-2">
-                                <div className="flex items-center justify-between">
-                                  <p className="text-xs font-semibold">Filter: {col.label}</p>
-                                  {filters[col.key] && (
-                                    <button
-                                      onClick={() => setFilter(col.key, "")}
-                                      className="text-xs text-muted-foreground hover:text-foreground"
-                                    >
-                                      Clear
-                                    </button>
-                                  )}
-                                </div>
-                                <Input
-                                  value={filters[col.key] ?? ""}
-                                  onChange={(e) => setFilter(col.key, e.target.value)}
-                                  placeholder="Type to filter..."
-                                  className="h-8 text-xs"
-                                  autoFocus
-                                />
-                              </div>
+                              <ColumnFilterPopoverContent
+                                col={col}
+                                students={students}
+                                activeFilter={filters[col.key] ?? ""}
+                                onApplyFilter={(val) => setFilter(col.key, val)}
+                              />
                             </PopoverContent>
                           </Popover>
                         </div>
@@ -800,6 +1188,65 @@ export function StudentsTab({ refresh, onImported }: { refresh?: number; onImpor
             <AlertDialogAction className="bg-destructive hover:bg-destructive/90 text-destructive-foreground" onClick={confirmSelectedDelete}>
               Delete
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk PDF Generation Progress Dialog */}
+      <AlertDialog open={bulkGenerating}>
+        <AlertDialogContent className="sm:max-w-[480px]">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-lg font-bold">
+              <span className="relative flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-primary"></span>
+              </span>
+              Exporting PDFs in Bulk
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-4 pt-2" render={<div />}>
+              <div className="flex justify-between text-xs font-semibold text-foreground">
+                <span>Progress</span>
+                <span>{bulkCurrent} / {bulkTotal} completed</span>
+              </div>
+              
+              <div className="h-2 w-full rounded-full bg-muted overflow-hidden relative">
+                <div
+                  className="h-full rounded-full bg-primary transition-all duration-300 ease-out"
+                  style={{ width: `${bulkTotal > 0 ? Math.round((bulkCurrent / bulkTotal) * 100) : 0}%` }}
+                />
+              </div>
+
+              <div className="text-xs text-muted-foreground min-h-[32px] flex items-center justify-between border rounded-lg p-2.5 bg-muted/20">
+                <div className="flex flex-col">
+                  <span className="font-bold text-foreground truncate max-w-[280px]">
+                    {bulkCurrentName || "Initializing..."}
+                  </span>
+                  {bulkCurrentName && <span className="text-[10px] text-muted-foreground">Running PDF compiler...</span>}
+                </div>
+                <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded font-mono">
+                  {bulkTotal > 0 ? Math.round((bulkCurrent / bulkTotal) * 100) : 0}%
+                </span>
+              </div>
+
+              {bulkErrors.length > 0 && (
+                <div className="border border-destructive/20 bg-destructive/5 rounded-lg p-3 text-[11px] text-destructive max-h-32 overflow-y-auto space-y-1">
+                  <p className="font-bold border-b border-destructive/10 pb-1 mb-1">Warnings/Errors ({bulkErrors.length})</p>
+                  {bulkErrors.map((err, i) => (
+                    <div key={i} className="truncate" title={err}>{err}</div>
+                  ))}
+                </div>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="border-t pt-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { cancelBulkRef.current = true; }}
+              className="text-xs"
+            >
+              Cancel Generation
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
