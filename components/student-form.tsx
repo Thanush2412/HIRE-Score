@@ -485,22 +485,15 @@ export function StudentForm({ onSuccess }: { onSuccess?: () => void }) {
           setError("LeetCode and GitHub URLs are required.");
           return false;
         }
-        if (internalCodeathonEntries.length === 0) {
-          setError("Please add at least one Internal Codeathon Event.");
+        if (!form.internalCodeathon) {
+          setError("Please select Internal Codeathon Count.");
           return false;
         }
-        if (externalCodeathonEntries.length === 0) {
-          setError("Please add at least one External Codeathon Event.");
+        if (!form.externalCodeathon) {
+          setError("Please select External Codeathon Count.");
           return false;
         }
-        if (fullProjects.length === 0) {
-          setError("Please add at least one Full Length Project.");
-          return false;
-        }
-        if (globalCerts.length === 0) {
-          setError("Please add at least one Global Certification.");
-          return false;
-        }
+
         for (let i = 0; i < internalCodeathonEntries.length; i++) {
           if (!(internalCodeathonEntries[i] as Project & { file?: string }).file) {
             setError(`Please upload certificate for Internal Codeathon Event ${i + 1}.`);
@@ -1361,9 +1354,31 @@ function Step4Technical({
           <div>
             <h3 className="text-sm font-semibold">Internal Codeathon Events</h3>
           </div>
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20">
+          <div className="flex items-center gap-2">
             <span className="text-xs font-medium text-muted-foreground">Count:</span>
-            <span className="text-sm font-bold text-primary">{internalCodeathonEntries.length}</span>
+            <Input
+              type="number"
+              value={form.internalCodeathon}
+              onChange={(e) => {
+                const val = e.target.value;
+                set("internalCodeathon", val);
+                const count = parseInt(val) || 0;
+                setInternalCodeathonEntries(prev => {
+                  if (prev.length < count) {
+                    const next = [...prev];
+                    while (next.length < count) {
+                      next.push({ title: "", description: "", link: "" });
+                    }
+                    return next;
+                  } else {
+                    return prev.slice(0, count);
+                  }
+                });
+              }}
+              min={0}
+              placeholder="0"
+              className="h-8 w-20 text-center"
+            />
           </div>
         </div>
 
@@ -1452,9 +1467,31 @@ function Step4Technical({
           <div>
             <h3 className="text-sm font-semibold">External Codeathon Events</h3>
           </div>
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20">
+          <div className="flex items-center gap-2">
             <span className="text-xs font-medium text-muted-foreground">Count:</span>
-            <span className="text-sm font-bold text-primary">{externalCodeathonEntries.length}</span>
+            <Input
+              type="number"
+              value={form.externalCodeathon}
+              onChange={(e) => {
+                const val = e.target.value;
+                set("externalCodeathon", val);
+                const count = parseInt(val) || 0;
+                setExternalCodeathonEntries(prev => {
+                  if (prev.length < count) {
+                    const next = [...prev];
+                    while (next.length < count) {
+                      next.push({ title: "", description: "", link: "" });
+                    }
+                    return next;
+                  } else {
+                    return prev.slice(0, count);
+                  }
+                });
+              }}
+              min={0}
+              placeholder="0"
+              className="h-8 w-20 text-center"
+            />
           </div>
         </div>
 
