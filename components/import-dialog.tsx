@@ -24,7 +24,7 @@ const PRIMARY_FIELDS = [
   { key: "pgPercentage",        label: "PG %",                     primaryKey: false, headerMatches: ["pg %", "pg%", "pg percentage", "post"] },
   { key: "noOfArrears",         label: "No. of Arrears",           primaryKey: false, headerMatches: ["no. of arrear", "no of arrear", "current arrear", "standing arrear"] },
   { key: "historyOfArrears",    label: "History of Arrears",       primaryKey: false, headerMatches: ["history of arrear", "hist arrear", "total arrear"] },
-  { key: "cefrGrammar",         label: "CEFR Grammar",             primaryKey: false, headerMatches: ["cefr grammar", "cefr", "grammar"] },
+  { key: "cefrGrammar",         label: "CEFR",                     primaryKey: false, headerMatches: ["cefr grammar", "cefr", "grammar"] },
   { key: "efSetListening",      label: "EF SET Listening",         primaryKey: false, headerMatches: ["listening", "ef listen"] },
   { key: "efSetSpeaking",       label: "EF SET Speaking",          primaryKey: false, headerMatches: ["speaking", "ef speak"] },
   { key: "efSetReading",        label: "EF SET Reading",           primaryKey: false, headerMatches: ["reading", "ef read"] },

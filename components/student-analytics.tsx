@@ -232,7 +232,7 @@ export function StudentAnalytics({ student, open, onClose }: {
                 { l: "Quants", v: `${s.quants}/50` },
                 { l: "Logical", v: `${s.logical}/50` },
                 { l: "Verbal", v: `${s.verbal}/50` },
-                { l: "CEFR Grammar", v: s.cefrGrammar || "—" },
+                { l: "CEFR", v: s.cefrGrammar || "—" },
                 { l: "EF Listening", v: s.efSetListening || "—" },
                 { l: "EF Speaking", v: s.efSetSpeaking || "—" },
                 { l: "EF Reading", v: s.efSetReading || "—" },

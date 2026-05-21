@@ -469,7 +469,7 @@ export function StudentForm({ onSuccess }: { onSuccess?: () => void }) {
         return true;
       case 3:
         const cefrFields: [string, string][] = [
-          ["cefrGrammar", "CEFR Grammar"],
+          ["cefrGrammar", "CEFR"],
           ["efSetListening", "EF SET Listening"], ["efSetSpeaking", "EF SET Speaking"],
           ["efSetReading", "EF SET Reading"], ["efSetWriting", "EF SET Writing"],
         ];
@@ -1156,7 +1156,7 @@ function Step3Language({
   onCertFileUpload: (key: string, file: File) => Promise<void>;
 }) {
   const cefrFields: [keyof FormState, string][] = [
-    ["cefrGrammar", "CEFR Grammar"],
+    ["cefrGrammar", "CEFR"],
   ];
 
   const efSetFields: [keyof FormState, string][] = [

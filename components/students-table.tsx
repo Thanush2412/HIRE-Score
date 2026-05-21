@@ -69,7 +69,7 @@ function getMissingData(s: StudentData) {
   const missing: string[] = [];
   if (!s.phone) missing.push("Phone");
   if (!s.email) missing.push("Email");
-  if (!s.cefrGrammar) missing.push("CEFR Grammar");
+  if (!s.cefrGrammar) missing.push("CEFR");
   if (!s.efSetListening) missing.push("EF Listen");
   if (!s.efSetSpeaking) missing.push("EF Speak");
   if (!s.efSetReading) missing.push("EF Read");
@@ -114,7 +114,7 @@ export function StudentsTable({ refresh }: { refresh?: number }) {
     // Academic
     "X%", "XII%", "UG%", "PG%", "Arrears", "Hist. Arrears",
     // Language
-    "CEFR Grammar", "EF Listen", "EF Speak", "EF Read", "EF Write",
+    "CEFR", "EF Listen", "EF Speak", "EF Read", "EF Write",
     // Technical
     "LeetCode URL", "GitHub URL", "Leetcode Rank", "FOP", "DSA",
     "Int. Codeathon", "Ext. Codeathon",
