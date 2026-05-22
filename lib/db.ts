@@ -96,6 +96,21 @@ function parseRankNum(v: unknown): number {
   return isNaN(n) ? 0 : n;
 }
 
+function cleanCEFR(val: unknown): string {
+  if (!val) return "";
+  const s = String(val).toUpperCase().trim();
+  const levels = s
+    .split(/[\s,/;]+/)
+    .map(p => p.trim())
+    .filter(p => ["A1", "A2", "B1", "B2", "C1", "C2"].includes(p));
+  
+  if (levels.length === 0) return "";
+  
+  const rank: Record<string, number> = { A1: 1, A2: 2, B1: 3, B2: 4, C1: 5, C2: 6 };
+  levels.sort((a, b) => rank[b] - rank[a]);
+  return levels[0] || "";
+}
+
 function fromRow(row: any): StoredStudent {
   return {
     ...row,
@@ -103,7 +118,11 @@ function fromRow(row: any): StoredStudent {
     college: row.college || "",
     createdAt: row.created_at,
     leetcodeRank: parseRankNum(row.leetcodeRank),
-    // The view already maps underscored columns to camelCase for the StudentData part
+    cefrGrammar: cleanCEFR(row.cefrGrammar),
+    efSetListening: cleanCEFR(row.efSetListening),
+    efSetSpeaking: cleanCEFR(row.efSetSpeaking),
+    efSetReading: cleanCEFR(row.efSetReading),
+    efSetWriting: cleanCEFR(row.efSetWriting),
   };
 }
 

@@ -45,9 +45,27 @@ const rawRow = [
 
 // Replicate primary/secondary route parse & cast logic
 function parseCEFR(v: unknown): string {
-  const s = String(v ?? "").trim().toUpperCase();
-  return ["A1", "A2", "B1", "B2", "C1", "C2"].includes(s) ? s : "";
+  const CEFR_LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"];
+  if (!v) return "";
+  const parts = String(v)
+    .split(/[\s,]+/)
+    .map((p) => p.trim().toUpperCase())
+    .filter((p) => CEFR_LEVELS.includes(p));
+
+  if (parts.length === 0) return "";
+  
+  let highest = parts[0];
+  let highestIdx = CEFR_LEVELS.indexOf(highest);
+  for (let i = 1; i < parts.length; i++) {
+    const idx = CEFR_LEVELS.indexOf(parts[i]);
+    if (idx > highestIdx) {
+      highest = parts[i];
+      highestIdx = idx;
+    }
+  }
+  return highest;
 }
+
 
 function parseNum(v: unknown): number {
   const n = Number(v); return isNaN(n) ? 0 : n;

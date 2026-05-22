@@ -10,8 +10,19 @@ function cefrScore(level: string, max: number): number {
   const map: Record<string, number> = {
     A1: 5, A2: 10, B1: 12, B2: 15, C1: 20, C2: 25,
   };
-  const raw = map[String(level).toUpperCase().trim()] ?? 0;
-  return Math.min(raw, max);
+  if (!level) return 0;
+
+  const s = String(level).toUpperCase().trim();
+  const levels = s
+    .split(/[\s,/;]+/)
+    .map(p => p.trim())
+    .filter(p => map[p] !== undefined);
+
+  if (levels.length === 0) return 0;
+
+  const scores = levels.map(p => map[p] || 0);
+  const highest = Math.max(...scores);
+  return Math.min(highest, max);
 }
 
 // ── X Score (15) ─────────────────────────────────────────────────────────────
