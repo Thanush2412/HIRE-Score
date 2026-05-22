@@ -1,18 +1,11 @@
 import { NextResponse } from "next/server";
-import { getAllStudents, upsertStudent } from "@/lib/db";
+import { recalculateAllScores } from "@/lib/db";
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const students = await getAllStudents();
-    let updatedCount = 0;
-    
-    for (const student of students) {
-      // Re-upsert will run computeScores and save the newly calculated values
-      await upsertStudent(student);
-      updatedCount++;
-    }
+    const updatedCount = await recalculateAllScores();
     
     return NextResponse.json({
       success: true,
@@ -25,3 +18,4 @@ export async function GET() {
     }, { status: 500 });
   }
 }
+

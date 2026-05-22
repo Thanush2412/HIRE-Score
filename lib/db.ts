@@ -364,6 +364,57 @@ export async function bulkUpsert(
 }
 
 /**
+ * Recalculate all scores in memory and save to database in a bulk query.
+ */
+export async function recalculateAllScores(): Promise<number> {
+  const sb = getSupabase();
+  const students = await getAllStudents();
+  if (students.length === 0) return 0;
+
+  const scoresToUpsert = students.map((student) => {
+    const computed = computeScores(student);
+    return {
+      student_id: student.id,
+      x_score: computed.xScore,
+      xii_score: computed.xiiScore,
+      ug_score: computed.ugScore,
+      academic_aggregate: computed.academicAggregate,
+      no_of_arrears_score: computed.noOfArrearsScore,
+      history_arrears_score: computed.historyArrearsScore,
+      standing_arrears: computed.standingArrears,
+      quants_score: computed.quantsScore,
+      logical_score: computed.logicalScore,
+      verbal_score: computed.verbalScore,
+      aptitude_total: computed.aptitudeTotal,
+      cefr_grammar_score: computed.cefrGrammarScore,
+      ef_listening_score: computed.efListeningScore,
+      ef_speaking_score: computed.efSpeakingScore,
+      ef_reading_score: computed.efReadingScore,
+      ef_writing_score: computed.efWritingScore,
+      communication_total: computed.communicationTotal,
+      coding_practice: computed.codingPractice,
+      coding_assessment: computed.codingAssessment,
+      codeathon_hackathon: computed.codeathonHackathon,
+      mini_projects: computed.miniProjects,
+      full_length_project_score: computed.fullLengthProjectScore,
+      global_cert_score: computed.globalCertScore,
+      other_cert_score: computed.otherCertScore,
+      academic_regulatory: computed.academicRegulatory,
+      cognitive_linguistic: computed.cognitiveLinguistic,
+      technical_proficiency: computed.technicalProficiency,
+      industry_validation: computed.industryValidation,
+      hire_score: computed.hireScore,
+    };
+  });
+
+  const { error } = await sb.from("student_scores").upsert(scoresToUpsert);
+  if (error) throw new Error(`recalculateAllScores: ${error.message}`);
+
+  return students.length;
+}
+
+
+/**
  * Delete a student by their internal UUID.
  */
 export async function deleteStudentById(id: string): Promise<boolean> {
