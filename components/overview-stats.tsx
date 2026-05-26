@@ -22,7 +22,7 @@ function TT({ active, payload }: any) {
   return (
     <div style={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", color: "hsl(var(--foreground))", borderRadius: 8, padding: "6px 10px", fontSize: 12, boxShadow: "0 4px 12px rgba(0,0,0,0.15)" }}>
       <p style={{ fontWeight: 600 }}>{d.name || d.subject || d.label}</p>
-      <p style={{ fontWeight: 700, marginTop: 2 }}>{payload[0].value}</p>
+      <p style={{ fontWeight: 700, marginTop: 2 }}>{payload[0].value}%</p>
     </div>
   );
 }
@@ -77,8 +77,38 @@ export function OverviewStats({ refresh }: { refresh?: number }) {
   const [selectedDegreeType, setSelectedDegreeType] = useState<string>("ug");
   const [graphDegreeType, setGraphDegreeType] = useState<string>("ug");
   
+  // Settings and Hover states
+  interface Settings {
+    colleges: Array<{
+      name: string;
+      stream: "engineering" | "arts";
+      courses: Array<{
+        name: string;
+        degreeType: "ug" | "pg";
+        years: string[];
+      }>;
+    }>;
+  }
+  const [settings, setSettings] = useState<Settings>({ colleges: [] });
+  const [previewStudent, setPreviewStudent] = useState<StoredStudent | null>(null);
+  const [previewPos, setPreviewPos] = useState({ x: 0, y: 0 });
+
   const PER = 15;
   const { tick, border } = useChartColors();
+
+  // Load Settings
+  useEffect(() => {
+    fetch("/api/settings")
+      .then(r => r.json())
+      .then(data => {
+        if (data && Array.isArray(data.colleges)) {
+          setSettings(data);
+        }
+      })
+      .catch(err => {
+        console.error("Failed to load settings:", err);
+      });
+  }, []);
 
   useEffect(() => {
     // Check if there's a share filter
@@ -122,28 +152,74 @@ export function OverviewStats({ refresh }: { refresh?: number }) {
   
   useEffect(() => { setPage(1); }, [students.length]);
 
-  // Get unique colleges and courses for dropdowns — use actual college field
-  const hasCollegeData = allStudents.some(s => s.college && s.college.trim() !== "");
+  // Sync graphDegreeType with selectedDegreeType
+  useEffect(() => {
+    setGraphDegreeType(selectedDegreeType);
+  }, [selectedDegreeType]);
+
+  // Reset filters on stream/degree change
+  useEffect(() => {
+    setSelectedCollege("all");
+    setSelectedCourse("all");
+    setSelectedYear("all");
+  }, [selectedDegreeType, selectedStream]);
+
+  // Populate dropdowns from Settings
+  const hasCollegeData = settings.colleges && settings.colleges.length > 0;
 
   const availableColleges = isSharedView && shareFilter
     ? (shareFilter.colleges?.length ? shareFilter.colleges : [shareFilter.college])
-    : Array.from(new Set(allStudents.map(s => s.college).filter(c => c && c.trim() !== ""))).sort() as string[];
+    : settings.colleges
+        .filter(col => {
+          if (selectedStream !== "all" && col.stream !== selectedStream) return false;
+          return col.courses.some((co: any) => co.degreeType === selectedDegreeType);
+        })
+        .map(col => col.name)
+        .sort() as string[];
 
-  const availableCourses = isSharedView && shareFilter && shareFilter.courses?.length > 0
-    ? shareFilter.courses
-    : selectedCollege === "all"
-      ? Array.from(new Set(allStudents.map(s => s.department))).filter(Boolean).sort()
-      : Array.from(new Set(allStudents.filter(s => s.college === selectedCollege).map(s => s.department))).filter(Boolean).sort();
+  const availableCourses = (() => {
+    if (isSharedView && shareFilter && shareFilter.courses && shareFilter.courses.length > 0) {
+      return shareFilter.courses;
+    }
+    if (selectedCollege === "all") {
+      const coursesSet = new Set<string>();
+      settings.colleges.forEach(col => {
+        if (selectedStream !== "all" && col.stream !== selectedStream) return;
+        col.courses.forEach((co: any) => {
+          if (co.degreeType === selectedDegreeType) {
+            coursesSet.add(co.name);
+          }
+        });
+      });
+      return Array.from(coursesSet).sort();
+    } else {
+      const col = settings.colleges.find(c => c.name === selectedCollege);
+      if (!col) return [];
+      return col.courses
+        .filter((co: any) => co.degreeType === selectedDegreeType)
+        .map((co: any) => co.name)
+        .sort();
+    }
+  })();
 
-  // Available years for filter
-  const availableYears = Array.from(new Set(
-    (selectedCourse !== "all"
-      ? allStudents.filter(s => s.department === selectedCourse)
-      : selectedCollege !== "all"
-        ? allStudents.filter(s => s.college === selectedCollege)
-        : allStudents
-    ).map(s => s.year)
-  )).filter(Boolean).sort();
+  const availableYears = (() => {
+    if (isSharedView && shareFilter && shareFilter.years && shareFilter.years.length > 0) {
+      return shareFilter.years;
+    }
+    const yearsSet = new Set<string>();
+    settings.colleges.forEach(col => {
+      if (selectedCollege !== "all" && col.name !== selectedCollege) return;
+      if (selectedStream !== "all" && col.stream !== selectedStream) return;
+      col.courses.forEach((co: any) => {
+        if (co.degreeType !== selectedDegreeType) return;
+        if (selectedCourse !== "all" && co.name !== selectedCourse) return;
+        co.years.forEach((yr: string) => {
+          yearsSet.add(yr);
+        });
+      });
+    });
+    return Array.from(yearsSet).sort();
+  })();
 
   // Apply filters
   useEffect(() => {
@@ -158,8 +234,10 @@ export function OverviewStats({ refresh }: { refresh?: number }) {
   }, [selectedCollege, selectedCourse, selectedYear, selectedStream, selectedDegreeType, allStudents]);
 
   const total = students.length;
+  const degreeTotal = allStudents.filter(s => (s.degreeType ?? "ug").toLowerCase() === selectedDegreeType).length;
   const allTotal = allStudents.length;
-  const hasActiveFilter = selectedCollege !== "all" || selectedCourse !== "all" || selectedYear !== "all" || selectedStream !== "all" || selectedDegreeType !== "all";
+  const hasActiveFilter = selectedCollege !== "all" || selectedCourse !== "all" || selectedYear !== "all" || selectedStream !== "all";
+
 
   // Only show "no data" when there are truly no students at all
   if (allTotal === 0) return (
@@ -219,7 +297,7 @@ export function OverviewStats({ refresh }: { refresh?: number }) {
             className="text-xs text-primary hover:underline">Clear all</button>
         )}
         <div className="ml-auto text-xs text-muted-foreground">
-          Showing <span className="font-bold text-foreground">0</span> of <span className="font-bold text-foreground">{allTotal}</span> students
+          Showing <span className="font-bold text-foreground">0</span> of <span className="font-bold text-foreground">{degreeTotal}</span> students
         </div>
       </div>
       <div className="flex flex-col items-center justify-center py-20 gap-3 text-muted-foreground bg-card rounded-2xl border">
@@ -247,23 +325,23 @@ export function OverviewStats({ refresh }: { refresh?: number }) {
     const isArts = (stream ?? "").toLowerCase() === "arts";
 
     if (y.includes("fresh") || y === "1" || y.includes("first") || y.includes("1st")) {
-      return { max: 450,  academic: 150, cognitive: 300, technical: 0,   industry: 0,   label: year };
+      return { max: 450,  academic: 150, cognitive: 300, technical: 0,   industry: 0,   label: "First Year" };
     }
     if (y === "2" || y.includes("second") || y.includes("2nd")) {
       return isArts
-        ? { max: 700,  academic: 150, cognitive: 300, technical: 150, industry: 100, label: year }
-        : { max: 600,  academic: 150, cognitive: 300, technical: 150, industry: 0,   label: year };
+        ? { max: 700,  academic: 150, cognitive: 300, technical: 150, industry: 100, label: "Second Year" }
+        : { max: 600,  academic: 150, cognitive: 300, technical: 150, industry: 0,   label: "Second Year" };
     }
     if (y === "3" || y.includes("third") || y.includes("3rd")) {
       return isArts
-        ? { max: 1000, academic: 150, cognitive: 300, technical: 400, industry: 150, label: year }
-        : { max: 850,  academic: 150, cognitive: 300, technical: 300, industry: 100, label: year };
+        ? { max: 1000, academic: 150, cognitive: 300, technical: 400, industry: 150, label: "Third Year" }
+        : { max: 850,  academic: 150, cognitive: 300, technical: 300, industry: 100, label: "Third Year" };
     }
     // Engineering 4th year only
     if (y === "4" || y.includes("fourth") || y.includes("4th")) {
-      return { max: 1000, academic: 150, cognitive: 300, technical: 400, industry: 150, label: year };
+      return { max: 1000, academic: 150, cognitive: 300, technical: 400, industry: 150, label: "Fourth Year" };
     }
-    return { max: 1000, academic: 150, cognitive: 300, technical: 400, industry: 150, label: year };
+    return { max: 1000, academic: 150, cognitive: 300, technical: 400, industry: 150, label: "Fourth Year" };
   };
 
   // Per-student year-adjusted score percentage (score / their year's max)
@@ -314,7 +392,13 @@ export function OverviewStats({ refresh }: { refresh?: number }) {
   ];
 
   // ── Year-wise chart data — split by stream ───────────────────────────────
-  const graphStudents = students.filter(s => (s.degreeType ?? "ug").toLowerCase() === graphDegreeType);
+  const graphStudents = allStudents.filter(s => {
+    if ((s.degreeType ?? "ug").toLowerCase() !== graphDegreeType) return false;
+    if (selectedStream !== "all" && (s.stream ?? "").toLowerCase() !== selectedStream) return false;
+    if (selectedCollege !== "all" && s.college !== selectedCollege) return false;
+    if (selectedCourse !== "all" && s.department !== selectedCourse) return false;
+    return true;
+  });
 
   const flatYearStats: any[] = [];
   Array.from(new Set(graphStudents.map(s => s.year))).sort().forEach(year => {
@@ -332,7 +416,8 @@ export function OverviewStats({ refresh }: { refresh?: number }) {
         score: getAvg(engS),
         stream: "engineering",
         count: engS.length,
-        yearLabel
+        yearLabel,
+        year
       });
     }
     if (artsS.length > 0) {
@@ -341,7 +426,8 @@ export function OverviewStats({ refresh }: { refresh?: number }) {
         score: getAvg(artsS),
         stream: "arts",
         count: artsS.length,
-        yearLabel
+        yearLabel,
+        year
       });
     }
   });
@@ -433,7 +519,7 @@ export function OverviewStats({ refresh }: { refresh?: number }) {
         )}
 
         <div className="ml-auto text-xs text-muted-foreground">
-          Showing <span className="font-bold text-foreground">{students.length}</span> of <span className="font-bold text-foreground">{allStudents.length}</span> students
+          Showing <span className="font-bold text-foreground">{students.length}</span> of <span className="font-bold text-foreground">{degreeTotal}</span> students
         </div>
       </div>
 
@@ -552,27 +638,40 @@ export function OverviewStats({ refresh }: { refresh?: number }) {
                   <Tooltip content={({ active, payload }) => {
                     if (!active || !payload?.length) return null;
                     const d = payload[0].payload;
+                    const maxVal = getYearDenom(d.year, d.stream).max;
+                    const pct = Math.round((d.score / maxVal) * 100);
+                    const streamColor = d.stream === "arts" ? "#7c3aed" : "#0ea5e9";
                     return (
-                      <div style={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, padding: "8px 12px", fontSize: 12, boxShadow: "0 4px 12px rgba(0,0,0,0.12)" }}>
-                        <p style={{ fontWeight: 700, marginBottom: 4 }}>{d.yearLabel} — {d.stream === "arts" ? "Arts" : "Engineering"}</p>
-                        <div className="flex items-center justify-between gap-4">
-                          <span style={{ color: d.stream === "arts" ? "#7c3aed" : "#2563eb", fontWeight: 600 }}>Avg Score:</span>
-                          <span style={{ fontWeight: 700 }}>{d.score} <span style={{ fontWeight: 400, color: "hsl(var(--muted-foreground))", fontSize: 10 }}>({d.count} students)</span></span>
+                      <div className="bg-card border border-border rounded-xl shadow-xl p-3 text-xs min-w-[200px] pointer-events-none space-y-1">
+                        <p className="font-bold text-foreground border-b border-border pb-1 mb-1">
+                          {d.yearLabel} — {d.stream === "arts" ? "Arts" : "Engineering"}
+                        </p>
+                        <div className="flex items-center justify-between gap-4 py-0.5">
+                          <span className="text-muted-foreground">Avg Score:</span>
+                          <span className="font-bold text-foreground">{d.score} <span className="text-[10px] text-muted-foreground/60">/ {maxVal}</span></span>
+                        </div>
+                        <div className="flex items-center justify-between gap-4 py-0.5">
+                          <span className="text-muted-foreground">Percentage:</span>
+                          <span className="font-bold" style={{ color: streamColor }}>{pct}%</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-4 py-0.5">
+                          <span className="text-muted-foreground">Candidates:</span>
+                          <span className="font-medium text-foreground">{d.count} {d.count === 1 ? "student" : "students"}</span>
                         </div>
                       </div>
                     );
                   }} />
                   <Bar dataKey="score" radius={[4, 4, 0, 0]}>
                     {flatYearStats.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.stream === "arts" ? "#7c3aed" : "#2563eb"} />
+                      <Cell key={`cell-${index}`} fill={entry.stream === "arts" ? "#7c3aed" : "#0ea5e9"} />
                     ))}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
-
+ 
               <div className="flex items-center gap-4 mt-4 pt-3 border-t border-border/40">
                 <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-semibold">
-                  <span className="h-2.5 w-2.5 rounded-sm bg-[#2563eb]" />
+                  <span className="h-2.5 w-2.5 rounded-sm bg-[#0ea5e9]" />
                   Engineering
                 </div>
                 <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-semibold">
@@ -722,7 +821,16 @@ export function OverviewStats({ refresh }: { refresh?: number }) {
                   leaderMode === "top" && rank === 3 ? "bg-orange-400 text-white" :
                   "bg-muted text-muted-foreground"
                 }`}>{rank}</div>
-                <span className="flex-1 min-w-0 text-xs font-semibold text-foreground truncate group-hover:text-primary transition-colors">{s.name}</span>
+                <span className="flex-1 min-w-0 text-xs font-semibold text-foreground truncate group-hover:text-primary transition-colors relative"
+                  onMouseEnter={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setPreviewPos({ x: rect.right + 8, y: rect.top });
+                    setPreviewStudent(s);
+                  }}
+                  onMouseLeave={() => setPreviewStudent(null)}
+                >
+                  {s.name}
+                </span>
                 {visibleCols.has("regNo")     && <span className="w-28 shrink-0 font-mono text-[11px] text-muted-foreground truncate">{s.registrationNumber}</span>}
                 {visibleCols.has("dept")      && <span className="w-24 shrink-0 text-[11px] text-muted-foreground truncate">{s.department}</span>}
                 {visibleCols.has("year")      && <span className="w-20 shrink-0 text-[11px] text-muted-foreground truncate">{s.year}</span>}
@@ -846,6 +954,126 @@ export function OverviewStats({ refresh }: { refresh?: number }) {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Hover Quick Preview */}
+      {previewStudent && (
+        <div
+          className="fixed z-50 w-72 bg-card/95 backdrop-blur-md border border-border/80 rounded-2xl shadow-2xl p-4 pointer-events-none transition-all duration-200 ease-out"
+          style={{ left: Math.min(previewPos.x, window.innerWidth - 300), top: Math.min(previewPos.y, window.innerHeight - 380) }}
+        >
+          {/* Top Gradient bar */}
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-t-2xl" />
+          
+          <div className="flex items-center gap-3 mb-3 mt-1">
+            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center text-sm font-black text-primary border border-primary/10 shrink-0 shadow-inner">
+              {previewStudent.name.charAt(0)}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-bold truncate text-foreground">{previewStudent.name}</p>
+              <p className="text-[10px] text-muted-foreground/80 font-mono tracking-wider">{previewStudent.registrationNumber}</p>
+            </div>
+          </div>
+
+          <div className="space-y-1.5 text-[11px] mb-3 text-muted-foreground">
+            {previewStudent.college && (
+              <div className="flex justify-between border-b border-border/40 pb-1 mb-1 items-baseline">
+                <span className="text-[10px] font-medium text-muted-foreground/70">College</span>
+                <span className="font-bold text-foreground truncate max-w-[170px] text-right">{previewStudent.college}</span>
+              </div>
+            )}
+            <div className="flex justify-between items-baseline">
+              <span className="text-[10px] font-medium text-muted-foreground/70">Department</span>
+              <span className="font-bold text-foreground truncate max-w-[170px] text-right">{previewStudent.department}</span>
+            </div>
+            <div className="flex justify-between items-baseline">
+              <span className="text-[10px] font-medium text-muted-foreground/70">Year / Stream</span>
+              <span className="font-bold text-foreground">
+                {previewStudent.year} • {(previewStudent.stream ?? "Engineering").toUpperCase() === "ARTS" ? "Arts" : "Engineering"}
+              </span>
+            </div>
+
+            {/* Academic Details Section */}
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 border-t border-border/40 pt-2 mt-2">
+              <div className="bg-muted/30 p-1.5 rounded-lg border border-border/30">
+                <span className="text-muted-foreground/60 block text-[9px] uppercase font-semibold tracking-wider mb-0.5">Class X</span>
+                <span className="font-bold text-foreground text-xs">{previewStudent.xMarks}%</span>
+              </div>
+              <div className="bg-muted/30 p-1.5 rounded-lg border border-border/30">
+                <span className="text-muted-foreground/60 block text-[9px] uppercase font-semibold tracking-wider mb-0.5">Class XII</span>
+                <span className="font-bold text-foreground text-xs">{previewStudent.xiiMarks}%</span>
+              </div>
+              <div className="bg-muted/30 p-1.5 rounded-lg border border-border/30 mt-0.5">
+                <span className="text-muted-foreground/60 block text-[9px] uppercase font-semibold tracking-wider mb-0.5">UG Marks</span>
+                <span className="font-bold text-foreground text-xs">{previewStudent.ugPercentage}%</span>
+              </div>
+              
+              {previewStudent.pgPercentage !== null && previewStudent.pgPercentage !== undefined && previewStudent.pgPercentage !== 0 ? (
+                <div className="bg-muted/30 p-1.5 rounded-lg border border-border/30 mt-0.5">
+                  <span className="text-muted-foreground/60 block text-[9px] uppercase font-semibold tracking-wider mb-0.5">PG Marks</span>
+                  <span className="font-bold text-foreground text-xs">{previewStudent.pgPercentage}%</span>
+                </div>
+              ) : (
+                <div className="bg-muted/30 p-1.5 rounded-lg border border-border/30 mt-0.5">
+                  <span className="text-muted-foreground/60 block text-[9px] uppercase font-semibold tracking-wider mb-0.5">Arrears</span>
+                  <span className={`font-bold text-xs ${previewStudent.noOfArrears > 0 ? "text-red-500 dark:text-red-400" : "text-emerald-600 dark:text-emerald-500"}`}>
+                    {previewStudent.noOfArrears}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {previewStudent.pgPercentage !== null && previewStudent.pgPercentage !== undefined && previewStudent.pgPercentage !== 0 && (
+              <div className="flex justify-between border-t border-border/40 pt-1.5 mt-1.5 items-center">
+                <span className="text-[10px] font-medium text-muted-foreground/70">Arrears (Active / History)</span>
+                <span className={`font-bold ${previewStudent.noOfArrears > 0 ? "text-red-500 dark:text-red-400" : "text-foreground"}`}>
+                  {previewStudent.noOfArrears} / {previewStudent.historyOfArrears}
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div className="border-t border-border/50 pt-2.5 space-y-2">
+            {(() => {
+              const denom = getYearDenom(previewStudent.year, previewStudent.stream ?? undefined);
+              const maxVal = denom.max;
+              const pct = previewStudent.hireScore / maxVal;
+              const tiers = [
+                { label: "Academic", score: previewStudent.academicRegulatory, max: denom.academic, color: "#2563eb" },
+                { label: "Cognitive", score: previewStudent.cognitiveLinguistic, max: denom.cognitive, color: "#7c3aed" },
+                ...(denom.technical > 0 ? [{ label: "Technical", score: previewStudent.technicalProficiency, max: denom.technical, color: "#0891b2" }] : []),
+                ...(denom.industry > 0 ? [{ label: "Industry", score: previewStudent.industryValidation, max: denom.industry, color: "#059669" }] : []),
+              ];
+              return (
+                <>
+                  {tiers.map(t => (
+                    <div key={t.label} className="space-y-0.5">
+                      <div className="flex justify-between text-[10px]">
+                        <span className="text-muted-foreground/80 font-medium">{t.label}</span>
+                        <span className="font-bold" style={{ color: t.color }}>{Math.round(t.score)}/{t.max}</span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-muted overflow-hidden border border-border/10">
+                        <div className="h-full rounded-full transition-all duration-500 ease-out" style={{ width: `${Math.round((t.score/t.max)*100)}%`, backgroundColor: t.color }} />
+                      </div>
+                    </div>
+                  ))}
+                  
+                  <div className="flex justify-between items-center pt-2 border-t border-border/30 mt-1">
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">HIRE Score</span>
+                    <div className="text-right">
+                      <span className={`text-sm font-black ${
+                        pct >= 0.70 ? "text-emerald-600 dark:text-emerald-400" : pct >= 0.50 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"
+                      }`}>
+                        {previewStudent.hireScore}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground font-medium">/{maxVal} ({Math.round(pct * 100)}%)</span>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       )}

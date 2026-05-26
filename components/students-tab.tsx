@@ -597,6 +597,36 @@ export function StudentsTab({ refresh, onImported }: { refresh?: number; onImpor
     })
   );
 
+  const getFilteredStudentsForColumn = (colKey: keyof StoredStudent) => {
+    return students.filter((s) =>
+      COLUMNS.every(({ key }) => {
+        if (key === colKey) return true;
+        const f = filters[key]; if (!f) return true;
+        if (f.startsWith("[") && f.endsWith("]")) {
+          try {
+            const vals = JSON.parse(f) as string[];
+            if (vals.length === 0) return true;
+            const studentVal = String(s[key] ?? "").trim();
+            return vals.some(v => {
+              if (v.startsWith("__contains__:")) {
+                const query = v.slice(13);
+                return studentVal.toLowerCase().includes(query.toLowerCase());
+              }
+              return studentVal.toLowerCase() === v.toLowerCase();
+            });
+          } catch {
+            // Fallback
+          }
+        }
+        if (f.startsWith("__contains__:")) {
+          const query = f.slice(13);
+          return String(s[key] ?? "").toLowerCase().includes(query.toLowerCase());
+        }
+        return String(s[key] ?? "").toLowerCase().includes(f.toLowerCase());
+      })
+    );
+  };
+
   // Pagination
   const totalPages = Math.ceil(filtered.length / itemsPerPage);
   const sortedFiltered = sortKey
@@ -811,7 +841,7 @@ export function StudentsTab({ refresh, onImported }: { refresh?: number; onImpor
                             <PopoverContent className="w-64 p-3" align="start">
                               <ColumnFilterPopoverContent
                                 col={col}
-                                students={students}
+                                students={getFilteredStudentsForColumn(col.key)}
                                 activeFilter={filters[col.key] ?? ""}
                                 onApplyFilter={(val) => setFilter(col.key, val)}
                               />
@@ -1084,64 +1114,119 @@ export function StudentsTab({ refresh, onImported }: { refresh?: number; onImpor
       {/* Hover Quick Preview */}
       {previewStudent && (
         <div
-          className="fixed z-50 w-64 bg-card border border-border rounded-2xl shadow-2xl p-4 pointer-events-none"
-          style={{ left: Math.min(previewPos.x, window.innerWidth - 280), top: Math.min(previewPos.y, window.innerHeight - 320) }}
+          className="fixed z-50 w-72 bg-card/95 backdrop-blur-md border border-border/80 rounded-2xl shadow-2xl p-4 pointer-events-none transition-all duration-200 ease-out"
+          style={{ left: Math.min(previewPos.x, window.innerWidth - 300), top: Math.min(previewPos.y, window.innerHeight - 380) }}
         >
-          <div className="flex items-center gap-3 mb-3">
-            <div className="h-9 w-9 rounded-xl bg-primary/10 flex items-center justify-center text-sm font-black text-primary">
+          {/* Top Gradient bar */}
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-t-2xl" />
+          
+          <div className="flex items-center gap-3 mb-3 mt-1">
+            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center text-sm font-black text-primary border border-primary/10 shrink-0 shadow-inner">
               {previewStudent.name.charAt(0)}
             </div>
-            <div className="min-w-0">
-              <p className="text-xs font-bold truncate">{previewStudent.name}</p>
-              <p className="text-[10px] text-muted-foreground font-mono">{previewStudent.registrationNumber}</p>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-bold truncate text-foreground">{previewStudent.name}</p>
+              <p className="text-[10px] text-muted-foreground/80 font-mono tracking-wider">{previewStudent.registrationNumber}</p>
             </div>
           </div>
-          <div className="space-y-1.5 mb-3">
-            {[
-              { label: "Dept", value: previewStudent.department },
-              { label: "Year", value: previewStudent.year },
-              { label: "UG %", value: `${previewStudent.ugPercentage}%` },
-              { label: "Arrears", value: String(previewStudent.noOfArrears) },
-            ].map(({ label, value }) => (
-              <div key={label} className="flex justify-between text-[11px]">
-                <span className="text-muted-foreground">{label}</span>
-                <span className="font-semibold">{value}</span>
+
+          <div className="space-y-1.5 text-[11px] mb-3 text-muted-foreground">
+            {previewStudent.college && (
+              <div className="flex justify-between border-b border-border/40 pb-1 mb-1 items-baseline">
+                <span className="text-[10px] font-medium text-muted-foreground/70">College</span>
+                <span className="font-bold text-foreground truncate max-w-[170px] text-right">{previewStudent.college}</span>
               </div>
-            ))}
+            )}
+            <div className="flex justify-between items-baseline">
+              <span className="text-[10px] font-medium text-muted-foreground/70">Department</span>
+              <span className="font-bold text-foreground truncate max-w-[170px] text-right">{previewStudent.department}</span>
+            </div>
+            <div className="flex justify-between items-baseline">
+              <span className="text-[10px] font-medium text-muted-foreground/70">Year / Stream</span>
+              <span className="font-bold text-foreground">
+                {previewStudent.year} • {(previewStudent.stream ?? "Engineering").toUpperCase() === "ARTS" ? "Arts" : "Engineering"}
+              </span>
+            </div>
+
+            {/* Academic Details Section */}
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 border-t border-border/40 pt-2 mt-2">
+              <div className="bg-muted/30 p-1.5 rounded-lg border border-border/30">
+                <span className="text-muted-foreground/60 block text-[9px] uppercase font-semibold tracking-wider mb-0.5">Class X</span>
+                <span className="font-bold text-foreground text-xs">{previewStudent.xMarks}%</span>
+              </div>
+              <div className="bg-muted/30 p-1.5 rounded-lg border border-border/30">
+                <span className="text-muted-foreground/60 block text-[9px] uppercase font-semibold tracking-wider mb-0.5">Class XII</span>
+                <span className="font-bold text-foreground text-xs">{previewStudent.xiiMarks}%</span>
+              </div>
+              <div className="bg-muted/30 p-1.5 rounded-lg border border-border/30 mt-0.5">
+                <span className="text-muted-foreground/60 block text-[9px] uppercase font-semibold tracking-wider mb-0.5">UG Marks</span>
+                <span className="font-bold text-foreground text-xs">{previewStudent.ugPercentage}%</span>
+              </div>
+              
+              {previewStudent.pgPercentage !== null && previewStudent.pgPercentage !== undefined && previewStudent.pgPercentage !== 0 ? (
+                <div className="bg-muted/30 p-1.5 rounded-lg border border-border/30 mt-0.5">
+                  <span className="text-muted-foreground/60 block text-[9px] uppercase font-semibold tracking-wider mb-0.5">PG Marks</span>
+                  <span className="font-bold text-foreground text-xs">{previewStudent.pgPercentage}%</span>
+                </div>
+              ) : (
+                <div className="bg-muted/30 p-1.5 rounded-lg border border-border/30 mt-0.5">
+                  <span className="text-muted-foreground/60 block text-[9px] uppercase font-semibold tracking-wider mb-0.5">Arrears</span>
+                  <span className={`font-bold text-xs ${previewStudent.noOfArrears > 0 ? "text-red-500 dark:text-red-400" : "text-emerald-600 dark:text-emerald-500"}`}>
+                    {previewStudent.noOfArrears}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {previewStudent.pgPercentage !== null && previewStudent.pgPercentage !== undefined && previewStudent.pgPercentage !== 0 && (
+              <div className="flex justify-between border-t border-border/40 pt-1.5 mt-1.5 items-center">
+                <span className="text-[10px] font-medium text-muted-foreground/70">Arrears (Active / History)</span>
+                <span className={`font-bold ${previewStudent.noOfArrears > 0 ? "text-red-500 dark:text-red-400" : "text-foreground"}`}>
+                  {previewStudent.noOfArrears} / {previewStudent.historyOfArrears}
+                </span>
+              </div>
+            )}
           </div>
-          <div className="border-t pt-2.5 space-y-1.5">
+
+          <div className="border-t border-border/50 pt-2.5 space-y-2">
             {(() => {
               const denom = getYearDenom(previewStudent.year, previewStudent.stream ?? undefined);
+              const maxVal = denom.max;
+              const pct = previewStudent.hireScore / maxVal;
               const tiers = [
                 { label: "Academic", score: previewStudent.academicRegulatory, max: denom.academic, color: "#2563eb" },
                 { label: "Cognitive", score: previewStudent.cognitiveLinguistic, max: denom.cognitive, color: "#7c3aed" },
                 ...(denom.technical > 0 ? [{ label: "Technical", score: previewStudent.technicalProficiency, max: denom.technical, color: "#0891b2" }] : []),
                 ...(denom.industry > 0 ? [{ label: "Industry", score: previewStudent.industryValidation, max: denom.industry, color: "#059669" }] : []),
               ];
-              return tiers.map(t => (
-                <div key={t.label}>
-                  <div className="flex justify-between text-[10px] mb-0.5">
-                    <span className="text-muted-foreground">{t.label}</span>
-                    <span className="font-bold" style={{ color: t.color }}>{t.score}/{t.max}</span>
+              return (
+                <>
+                  {tiers.map(t => (
+                    <div key={t.label} className="space-y-0.5">
+                      <div className="flex justify-between text-[10px]">
+                        <span className="text-muted-foreground/80 font-medium">{t.label}</span>
+                        <span className="font-bold" style={{ color: t.color }}>{Math.round(t.score)}/{t.max}</span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-muted overflow-hidden border border-border/10">
+                        <div className="h-full rounded-full transition-all duration-500 ease-out" style={{ width: `${Math.round((t.score/t.max)*100)}%`, backgroundColor: t.color }} />
+                      </div>
+                    </div>
+                  ))}
+                  
+                  <div className="flex justify-between items-center pt-2 border-t border-border/30 mt-1">
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">HIRE Score</span>
+                    <div className="text-right">
+                      <span className={`text-sm font-black ${
+                        pct >= 0.70 ? "text-emerald-600 dark:text-emerald-400" : pct >= 0.50 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"
+                      }`}>
+                        {previewStudent.hireScore}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground font-medium">/{maxVal} ({Math.round(pct * 100)}%)</span>
+                    </div>
                   </div>
-                  <div className="h-1 rounded-full bg-muted overflow-hidden">
-                    <div className="h-full rounded-full" style={{ width: `${Math.round((t.score/t.max)*100)}%`, backgroundColor: t.color }} />
-                  </div>
-                </div>
-              ));
+                </>
+              );
             })()}
-            <div className="flex justify-between items-center pt-1">
-              <span className="text-[10px] font-bold text-muted-foreground">HIRE Score</span>
-              <span className={`text-sm font-black ${
-                previewStudent.hireScore / getYearMax(previewStudent.year, previewStudent.stream) >= 0.70
-                  ? "text-emerald-600"
-                  : previewStudent.hireScore / getYearMax(previewStudent.year, previewStudent.stream) >= 0.50
-                  ? "text-amber-600"
-                  : "text-red-600"
-              }`}>
-                {previewStudent.hireScore}/{getYearMax(previewStudent.year, previewStudent.stream)}
-              </span>
-            </div>
           </div>
         </div>
       )}

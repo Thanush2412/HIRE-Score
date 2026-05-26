@@ -452,6 +452,10 @@ export function StudentForm({ onSuccess }: { onSuccess?: () => void }) {
           setError("Phone and Email are required.");
           return false;
         }
+        if (form.phone.replace(/\D/g, "").length !== 10) {
+          setError("Phone number must be exactly 10 digits (without country code).");
+          return false;
+        }
         return true;
       case 2:
         if (!uploadedFiles.x || !form.xMarks) {
@@ -774,10 +778,19 @@ function Step1Identity({
           <FieldLabel required>Phone Number</FieldLabel>
           <Input
             value={form.phone}
-            onChange={(e) => set("phone", e.target.value)}
-            placeholder="+91 9876543210"
+            onChange={(e) => {
+              let val = e.target.value.replace(/\D/g, "");
+              if (val.startsWith("91") && val.length > 10) {
+                val = val.slice(2);
+              } else if (val.startsWith("0") && val.length > 10) {
+                val = val.slice(1);
+              }
+              set("phone", val.slice(0, 10));
+            }}
+            placeholder="9876543210"
             type="tel"
             className="h-10"
+            maxLength={10}
             required
           />
         </div>

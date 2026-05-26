@@ -136,6 +136,11 @@ export async function POST(req: NextRequest) {
         }
       }
       if (!student.name && !student.registrationNumber) continue;
+
+      // Infer degreeType: if PG percentage is non-null and greater than 0, it's PG
+      const isPg = student.pgPercentage !== null && student.pgPercentage !== undefined && Number(student.pgPercentage) > 0;
+      student.degreeType = isPg ? "pg" : "ug";
+
       records.push(student as unknown as StudentData);
     }
 
@@ -149,6 +154,7 @@ export async function POST(req: NextRequest) {
         stream:     rec.stream     as string | undefined,
         department: r.department,
         year:       r.year,
+        degreeType: rec.degreeType as string | undefined,
       };
     }));
 
