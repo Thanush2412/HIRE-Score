@@ -12,7 +12,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import {
   CheckCircle2, User, BookOpen, Code2, Languages, Upload, Link,
   Plus, Trash2, Info, ChevronRight, ChevronLeft, Award, GraduationCap,
-  FileText, Globe, Zap, AlertCircle, Check
+  FileText, Globe, Zap, AlertCircle, Check, Loader2
 } from "lucide-react";
 
 const CEFR = ["A1", "A2", "B1", "B2", "C1", "C2"];
@@ -1298,6 +1298,53 @@ function Step4Technical({
   setGlobalCerts: React.Dispatch<React.SetStateAction<CertEntry[]>>;
   onTechFileUpload: (category: "internalCodeathon" | "externalCodeathon" | "fullProject" | "globalCert" | "otherCert", idx: number, file: File) => Promise<void>;
 }) {
+  const [loadingRank, setLoadingRank] = useState(false);
+  const [rankError, setRankError] = useState("");
+
+  const extractLeetCodeUsername = (val: string): string => {
+    let clean = val.trim();
+    // Strip protocol, hostname, and common prefixes
+    clean = clean.replace(/^(https?:\/\/)?(www\.)?leetcode\.com\/(u\/)?/i, "");
+    // Remove query params or hash fragments
+    clean = clean.split(/[?#]/)[0];
+    // Remove trailing slashes
+    clean = clean.replace(/\/+$/, "");
+    return clean;
+  };
+
+  const triggerFetchRank = async (urlOrUsername: string) => {
+    const username = extractLeetCodeUsername(urlOrUsername);
+    if (!username) {
+      setRankError("Could not extract username from LeetCode URL");
+      return;
+    }
+    
+    setLoadingRank(true);
+    setRankError("");
+    try {
+      const res = await fetch("/api/leetcode-rank", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username }),
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Failed to fetch rank");
+      }
+      const data = await res.json();
+      if (data.ranking !== undefined) {
+        set("leetcodeRank", String(data.ranking));
+      } else {
+        throw new Error("Rank not found in response");
+      }
+    } catch (err: any) {
+      console.error(err);
+      setRankError(err.message || "Error fetching rank");
+    } finally {
+      setLoadingRank(false);
+    }
+  };
+
   return (
     <div className="space-y-8">
       <SectionHeading icon={Link} label="Profile Links" />
@@ -1309,11 +1356,44 @@ function Step4Technical({
             <Input
               value={form.leetcodeUrl}
               onChange={(e) => set("leetcodeUrl", e.target.value)}
+              onBlur={(e) => {
+                if (e.target.value.trim()) {
+                  triggerFetchRank(e.target.value);
+                }
+              }}
+              onPaste={(e) => {
+                const pastedText = e.clipboardData.getData("text");
+                if (pastedText.trim()) {
+                  triggerFetchRank(pastedText);
+                }
+              }}
               placeholder="https://leetcode.com/u/username"
-              className="h-10 pl-10 font-mono text-xs"
+              className="h-10 pl-10 pr-24 font-mono text-xs"
               required
             />
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+              {loadingRank ? (
+                <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                  <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                  Fetching
+                </span>
+              ) : form.leetcodeUrl ? (
+                <button
+                  type="button"
+                  onClick={() => triggerFetchRank(form.leetcodeUrl)}
+                  className="text-[10px] font-bold text-primary hover:text-primary/80 bg-primary/5 hover:bg-primary/10 px-2 py-1 rounded-md transition-all cursor-pointer"
+                >
+                  Fetch
+                </button>
+              ) : null}
+            </div>
           </div>
+          {rankError && (
+            <p className="text-[11px] text-destructive mt-1 flex items-center gap-1">
+              <AlertCircle className="h-3.5 w-3.5" />
+              {rankError}
+            </p>
+          )}
         </div>
         <div>
           <FieldLabel required>GitHub Profile URL</FieldLabel>
@@ -1335,13 +1415,13 @@ function Step4Technical({
       <SectionHeading icon={Zap} label="Coding Practice" />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         <div>
-          <FieldLabel tooltip="Your current LeetCode rank">LeetCode Rank</FieldLabel>
+          <FieldLabel tooltip="Your current LeetCode rank (fetched automatically)">LeetCode Rank</FieldLabel>
           <Input
             type="text"
             value={form.leetcodeRank}
-            onChange={(e) => set("leetcodeRank", e.target.value.replace(/[^0-9,~\s]/g, ""))}
-            placeholder="e.g. ~45,000"
-            className="h-10 font-mono"
+            readOnly
+            placeholder="Fetched automatically"
+            className="h-10 font-mono bg-muted/50 cursor-not-allowed text-muted-foreground select-none"
           />
         </div>
         <div>
