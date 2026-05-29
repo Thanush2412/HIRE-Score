@@ -37,8 +37,22 @@ function calcXScore(x: number): number {
 }
 
 // ── UG Score (70) ─────────────────────────────────────────────────────────────
-function calcUGScore(ug: number, pg: number | null): number {
-  if (pg === null || pg === 0) {
+function calcUGScore(
+  ug: number,
+  pgVal: number | string | null | undefined
+): number {
+  const pg = Number(pgVal);
+
+  const hasPG =
+    pgVal !== null &&
+    pgVal !== undefined &&
+    pgVal !== 0 &&
+    String(pgVal).trim() !== "" &&
+    String(pgVal).trim() !== "NA" &&
+    String(pgVal).trim() !== "—" &&
+    String(pgVal).trim() !== "-";
+
+  if (!hasPG) {
     if (ug >= 95) return 70;
     if (ug >= 90) return 65;
     if (ug >= 80) return 55;
@@ -87,7 +101,9 @@ function calcAptitudeComponent(raw: number): number {
 
 // ── Coding Practice (125) — Accepts clean numerical rank
 function calcCodingPractice(rank: number): number {
-  if (!rank || isNaN(rank)) return 0;
+  rank = Number(rank);
+
+  if (isNaN(rank) || rank <= 0) return 0;
   if (rank > 1   && rank < 40000)    return 125;
   if (rank >= 40000  && rank < 150000)   return 115;
   if (rank >= 150000 && rank < 225000)   return 95;
@@ -154,7 +170,13 @@ export function computeScores(s: StudentData): StudentData {
   const communicationTotal = cefrGrammarScore + efListeningScore + efSpeakingScore + efReadingScore + efWritingScore;
 
   // Tier 3 Technical
-  const codingPractice       = calcCodingPractice(s.leetcodeRank);
+  const cleanedRank = Number(
+    String(s.leetcodeRank || "")
+      .replace(/[^0-9]/g, "")
+      .trim()
+  );
+
+  const codingPractice       = calcCodingPractice(cleanedRank);
   const codingAssessment     = calcCodingAssessment(s.fopAssessment, s.dsaAssessment);
   const codeathonHackathon   = calcCodeathon(s.internalCodeathon, s.externalCodeathon);
   const miniProjects         = calcMiniProjects(s.githubProjects);
@@ -169,6 +191,14 @@ export function computeScores(s: StudentData): StudentData {
   const industryValidation   = globalCertScore + otherCertScore;
 
   const hireScore = academicRegulatory + cognitiveLinguistic + technicalProficiency + industryValidation;
+
+  console.log({
+    leetcodeRank: s.leetcodeRank,
+    cleanedRank,
+    codingPractice,
+    technicalProficiency,
+    hireScore,
+  });
 
   return {
     ...s,
