@@ -17,8 +17,9 @@ import {
   AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { RefreshCw, Users, X, Upload, Trash2, BarChart2, Filter, ArrowUpDown, ArrowUp, ArrowDown, Download, Eye, FileText } from "lucide-react";
+import { RefreshCw, Users, X, Upload, Trash2, BarChart2, Filter, ArrowUpDown, ArrowUp, ArrowDown, Download, Eye, FileText, Pencil } from "lucide-react";
 import { ImportDialog } from "@/components/import-dialog";
+import { EditStudentDialog } from "@/components/edit-student-dialog";
 import { StoredStudent } from "@/lib/db";
 import JSZip from "jszip";
 
@@ -383,6 +384,7 @@ function ColumnFilterPopoverContent({
 export function StudentsTab({ refresh, onImported }: { refresh?: number; onImported: () => void }) {
   const router = useRouter();
   const [students, setStudents] = useState<StoredStudent[]>([]);
+  const [editStudent, setEditStudent] = useState<StoredStudent | null>(null);
   const [loading, setLoading] = useState(true);
   const [filters, setFiltersRaw] = useState<Partial<Record<keyof StoredStudent, string>>>(() => {
     if (typeof window === "undefined") return {};
@@ -1022,15 +1024,24 @@ export function StudentsTab({ refresh, onImported }: { refresh?: number; onImpor
                         );
                       })}
 
-                      {/* Delete action */}
-                      <TableCell className="px-2 py-2 text-center w-16">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setDeleteTarget(s); }}
-                          className="inline-flex items-center justify-center h-6 w-6 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100"
-                          title="Delete student"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                      {/* Actions */}
+                      <TableCell className="px-2 py-2 text-center w-16 whitespace-nowrap">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setEditStudent(s); }}
+                            className="inline-flex items-center justify-center h-6 w-6 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors opacity-0 group-hover:opacity-100"
+                            title="Edit student"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setDeleteTarget(s); }}
+                            className="inline-flex items-center justify-center h-6 w-6 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100"
+                            title="Delete student"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   )})}
@@ -1237,6 +1248,14 @@ export function StudentsTab({ refresh, onImported }: { refresh?: number; onImpor
         onClose={() => setImportOpen(false)}
         onImported={() => { onImported(); fetchStudents(); }}
         mode={importMode}
+      />
+
+      {/* Edit Student dialog */}
+      <EditStudentDialog
+        open={editStudent !== null}
+        student={editStudent}
+        onClose={() => setEditStudent(null)}
+        onSave={() => { fetchStudents(); onImported(); }}
       />
 
       {/* Single delete confirm */}

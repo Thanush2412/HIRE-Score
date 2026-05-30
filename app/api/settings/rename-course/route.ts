@@ -4,7 +4,7 @@
  * Body: { collegeName: string; oldName: string; newName: string }
  */
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabase } from "@/lib/db";
+import { renameDepartmentInDb } from "@/lib/db";
 
 export async function PATCH(req: NextRequest) {
   try {
@@ -18,29 +18,9 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ ok: true, updated: 0 });
     }
 
-    const sb = getSupabase();
+    const updatedRows = await renameDepartmentInDb(collegeName, oldName, newName);
 
-    // Find the college id
-    const { data: college, error: colErr } = await sb
-      .from("colleges")
-      .select("id")
-      .eq("name", collegeName)
-      .maybeSingle();
-
-    if (colErr) throw new Error(colErr.message);
-    if (!college) return NextResponse.json({ error: "College not found" }, { status: 404 });
-
-    // Rename the department row
-    const { data, error: deptErr } = await sb
-      .from("departments")
-      .update({ name: newName })
-      .eq("college_id", college.id)
-      .eq("name", oldName)
-      .select("id");
-
-    if (deptErr) throw new Error(deptErr.message);
-
-    return NextResponse.json({ ok: true, updated: data?.length ?? 0 });
+    return NextResponse.json({ ok: true, updated: updatedRows });
   } catch (err) {
     console.error("[rename-course]", err);
     return NextResponse.json({ error: String(err) }, { status: 500 });

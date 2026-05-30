@@ -110,7 +110,7 @@ function calcCodingPractice(rank: number): number {
   if (rank >= 225000 && rank < 350000)   return 75;
   if (rank >= 350000 && rank < 625000)   return 55;
   if (rank >= 625000 && rank < 1200000)  return 45;
-  if (rank >= 1200000 && rank < 3000000) return 25;
+  if (rank >= 1200000 && rank < 2000000) return 25;
   return 10;
 }
 

@@ -307,7 +307,7 @@ export function StudentForm({ onSuccess }: { onSuccess?: () => void }) {
   // ── Cert file upload handler (used by Step3 and Step4) ───────────────────
   const handleCertFileUpload = async (key: string, file: File) => {
     const ext = file.name.split(".").pop() ?? "pdf";
-    const path = `certs/${regNo()}/${key}.${ext}`;
+    const path = `${regNo()}/certs/${key}.${ext}`;
     setCertUploads(prev => ({ ...prev, [key]: file.name }));
     const url = await uploadToStorage(file, path);
     if (url) {
@@ -325,7 +325,7 @@ export function StudentForm({ onSuccess }: { onSuccess?: () => void }) {
     file: File
   ) => {
     const ext = file.name.split(".").pop() ?? "pdf";
-    const path = `docs/${regNo()}/${category}_${idx}.${ext}`;
+    const path = `${regNo()}/docs/${category}_${idx}.${ext}`;
     const url = await uploadToStorage(file, path);
     if (!url) return;
     const keyMap: Record<string, keyof typeof uploadedUrls> = {
@@ -387,7 +387,7 @@ export function StudentForm({ onSuccess }: { onSuccess?: () => void }) {
     if (!files || files.length === 0) return;
     const file = files[0];
     const ext = file.name.split(".").pop() ?? "pdf";
-    const path = `marksheets/${regNo()}/${level}.${ext}`;
+    const path = `${regNo()}/marksheets/${level}.${ext}`;
     setUploadedFiles(prev => ({ ...prev, [level]: file.name }));
     const url = await uploadToStorage(file, path);
     if (url) setUploadedUrls(prev => ({ ...prev, [level]: url }));
@@ -397,7 +397,7 @@ export function StudentForm({ onSuccess }: { onSuccess?: () => void }) {
     if (!files || files.length === 0) return;
     const file = files[0];
     const ext = file.name.split(".").pop() ?? "pdf";
-    const path = `marksheets/${regNo()}/${level}_sem_${idx}.${ext}`;
+    const path = `${regNo()}/marksheets/${level}_sem_${idx}.${ext}`;
     if (level === "ug") {
       setUgSemesters(prev => { const n = [...prev]; n[idx] = { ...n[idx], file: file.name }; return n; });
     } else {

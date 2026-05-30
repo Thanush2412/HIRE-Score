@@ -1,12 +1,11 @@
 /**
- * settings.supabase.ts
- * Drop-in replacement for lib/settings.ts using Supabase.
- * All functions are async — update callers accordingly.
- *
- * TO ACTIVATE: rename to settings.ts (back up the original first).
+ * settings.ts
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Configuration and settings management using Hostinger MySQL database.
+ * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { getSupabase } from "./db";
+import { getSettingsFromDb, saveSettingsToDb, syncStudentsDegreeTypeInDb } from "./db";
 
 export interface Course {
   name: string;
@@ -28,68 +27,19 @@ const DEFAULTS: Settings = { colleges: [] };
 
 export async function getSettings(): Promise<Settings> {
   try {
-    const sb = getSupabase();
-    const { data, error } = await sb
-      .from("settings")
-      .select("value")
-      .eq("key", "main")
-      .maybeSingle();
-
-    if (error) throw error;
-    if (data) return data.value as Settings;
+    const data = await getSettingsFromDb();
+    if (data) return data as unknown as Settings;
   } catch (e) {
     console.error("Failed to read settings:", e);
   }
   return JSON.parse(JSON.stringify(DEFAULTS)) as Settings;
 }
 
-export async function syncStudentsDegreeType(settings: Settings): Promise<void> {
-  try {
-    const sb = getSupabase();
-    for (const col of settings.colleges) {
-      // Get college database row
-      const { data: colData } = await sb
-        .from("colleges")
-        .select("id")
-        .eq("name", col.name)
-        .maybeSingle();
-
-      if (!colData) continue;
-
-      for (const co of col.courses) {
-        // Get department database row
-        const { data: deptData } = await sb
-          .from("departments")
-          .select("id")
-          .eq("college_id", colData.id)
-          .eq("name", co.name)
-          .maybeSingle();
-
-        if (!deptData) continue;
-
-        // Update students under this college and department
-        await sb
-          .from("students")
-          .update({ degree_type: co.degreeType })
-          .eq("college_id", colData.id)
-          .eq("department_id", deptData.id);
-      }
-    }
-  } catch (err) {
-    console.error("Failed to sync student degree types:", err);
-  }
-}
-
 export async function saveSettings(s: Settings): Promise<Settings> {
   try {
-    const sb = getSupabase();
-    const { error } = await sb
-      .from("settings")
-      .upsert({ key: "main", value: s }, { onConflict: "key" });
-    if (error) throw error;
-
-    // Sync student degree types to match the new settings
-    await syncStudentsDegreeType(s);
+    await saveSettingsToDb(s as any);
+    // Sync student degree types to match the new settings in MySQL
+    await syncStudentsDegreeTypeInDb(s);
   } catch (e) {
     console.error("Failed to save settings:", e);
   }

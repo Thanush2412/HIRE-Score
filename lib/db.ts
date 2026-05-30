@@ -1,55 +1,12 @@
 /**
- * db.supabase.ts
+ * db.ts
  * ─────────────────────────────────────────────────────────────────────────────
- * Drop-in replacement for lib/db.ts using Supabase (Postgres) instead of
- * SQLite + better-sqlite3.
- *
- * HOW TO SWITCH:
- *   1. Install:  npm install @supabase/supabase-js
- *   2. Add to .env.local:
- *        NEXT_PUBLIC_SUPABASE_URL=https://<project-id>.supabase.co
- *        SUPABASE_SERVICE_ROLE_KEY=<service-role-key>   ← use service role, NOT publishable key
- *   3. Run the SQL schema below in Supabase SQL Editor (one-time setup).
- *   4. Rename this file to db.ts  (and back up / remove the old SQLite db.ts).
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * SUPABASE SQL SCHEMA  (run once in Supabase → SQL Editor)
- * ─────────────────────────────────────────────────────────────────────────────
- *
- *   -- Students table
- *   CREATE TABLE IF NOT EXISTS students (
- *     id           TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
- *     college      TEXT NOT NULL DEFAULT '',
- *     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
- *     data         JSONB NOT NULL
- *   );
- *   CREATE INDEX IF NOT EXISTS idx_students_reg
- *     ON students ((data->>'registrationNumber'));
- *   CREATE INDEX IF NOT EXISTS idx_students_college
- *     ON students (college);
- *
- *   -- Settings table
- *   CREATE TABLE IF NOT EXISTS settings (
- *     key   TEXT PRIMARY KEY,
- *     value JSONB NOT NULL
- *   );
- *
- *   -- Share tokens table
- *   CREATE TABLE IF NOT EXISTS share_tokens (
- *     id            TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
- *     college_name  TEXT NOT NULL DEFAULT '',
- *     colleges      JSONB NOT NULL DEFAULT '[]',
- *     courses       JSONB NOT NULL DEFAULT '[]',
- *     years         JSONB NOT NULL DEFAULT '[]',
- *     token         TEXT NOT NULL UNIQUE,
- *     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
- *     last_accessed TIMESTAMPTZ
- *   );
- *
+ * Database adapter for Hostinger MySQL.
+ * Handles pooling, connections, CRUD operations, transactions, and settings.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import mysql, { Pool } from "mysql2/promise";
 import { StudentData } from "./types";
 import { computeScores } from "./formulas";
 
@@ -61,33 +18,48 @@ export type StoredStudent = StudentData & {
   createdAt: string;
 };
 
-// ── Supabase client (server-side only — uses service role key) ────────────────
+export interface ShareTokenRow {
+  id: string;
+  college_name: string;
+  colleges: string[];
+  courses: string[];
+  years: string[];
+  token: string;
+  created_at: string;
+  last_accessed: string | null;
+}
+
+// ── MySQL Connection Pool ─────────────────────────────────────────────────────
 
 declare global {
   // eslint-disable-next-line no-var
-  var __supabaseClient: SupabaseClient | undefined;
+  var __dbPool: Pool | undefined;
 }
 
-export function getSupabase(): SupabaseClient {
-  if (global.__supabaseClient) return global.__supabaseClient;
+export function getPool(): Pool {
+  if (global.__dbPool) return global.__dbPool;
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const host = process.env.DB_HOST || "82.25.111.19";
+  const user = process.env.DB_USER || "u461595815_hirescore";
+  const password = process.env.DB_PASSWORD || "hireScore-admin1";
+  const database = process.env.DB_NAME || "u461595815_Hirescore";
+  const port = parseInt(process.env.DB_PORT || "3306");
 
-  if (!url || !key) {
-    throw new Error(
-      "Missing Supabase env vars: NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set."
-    );
-  }
-
-  global.__supabaseClient = createClient(url, key, {
-    auth: { persistSession: false },
+  global.__dbPool = mysql.createPool({
+    host,
+    user,
+    password,
+    database,
+    port,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0,
   });
 
-  return global.__supabaseClient;
+  return global.__dbPool;
 }
 
-// ── Row ↔ StoredStudent helpers ───────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function parseRankNum(v: unknown): number {
   if (v === null || v === undefined || v === "") return 0;
@@ -111,58 +83,60 @@ function cleanCEFR(val: unknown): string {
   return levels[0] || "";
 }
 
+function parseJSON(val: any): any {
+  if (typeof val === "string") {
+    try {
+      return JSON.parse(val);
+    } catch {
+      return val;
+    }
+  }
+  return val;
+}
+
 function fromRow(row: any): StoredStudent {
+  if (!row) return null as any;
   return {
     ...row,
     id: row.id,
     college: row.college || "",
-    createdAt: row.created_at,
+    createdAt: row.created_at || row.createdAt || "",
     leetcodeRank: parseRankNum(row.leetcodeRank),
     cefrGrammar: cleanCEFR(row.cefrGrammar),
     efSetListening: cleanCEFR(row.efSetListening),
     efSetSpeaking: cleanCEFR(row.efSetSpeaking),
     efSetReading: cleanCEFR(row.efSetReading),
     efSetWriting: cleanCEFR(row.efSetWriting),
+    ugSemesterMarks: parseJSON(row.ugSemesterMarks) || [],
+    pgSemesterMarks: parseJSON(row.pgSemesterMarks) || [],
+    certUrls: parseJSON(row.certUrls) || {},
+    internalCodeathonDetails: parseJSON(row.internalCodeathonDetails) || [],
+    externalCodeathonDetails: parseJSON(row.externalCodeathonDetails) || [],
+    fullLengthProjectDetails: parseJSON(row.fullLengthProjectDetails) || [],
+    globalCertDetails: parseJSON(row.globalCertDetails) || [],
+    otherCertDetails: parseJSON(row.otherCertDetails) || [],
   };
 }
 
-// ── Public API — mirrors lib/db.ts exactly ────────────────────────────────────
+// ── Public API ────────────────────────────────────────────────────────────────
 
-/**
- * Get all students ordered by import sequence (if available), then by creation date ascending.
- * Uses the unified view student_full_view.
- */
 export async function getAllStudents(): Promise<StoredStudent[]> {
-  const sb = getSupabase();
-  const { data, error } = await sb
-    .from("student_full_view")
-    .select("*")
-    .order("importSequence", { ascending: true })
-    .order("created_at", { ascending: true });
-
-  if (error) throw new Error(`getAllStudents: ${error.message}`);
-  
-  return (data as any[]).map(fromRow);
+  const pool = getPool();
+  const [rows] = await pool.query(
+    "SELECT * FROM student_full_view ORDER BY importSequence ASC, created_at ASC"
+  );
+  return (rows as any[]).map(fromRow);
 }
 
-/**
- * Get a single student by their internal UUID.
- */
 export async function getStudentById(id: string): Promise<StoredStudent | null> {
-  const sb = getSupabase();
-  const { data, error } = await sb
-    .from("student_full_view")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
-
-  if (error) throw new Error(`getStudentById: ${error.message}`);
-  return data ? fromRow(data) : null;
+  const pool = getPool();
+  const [rows] = await pool.query("SELECT * FROM student_full_view WHERE id = ?", [id]);
+  if (Array.isArray(rows) && rows.length > 0) {
+    return fromRow(rows[0]);
+  }
+  return null;
 }
 
-/**
- * Get students filtered by college, courses, and/or years.
- */
 export async function getStudentsFiltered(opts: {
   colleges?: string[];
   college?: string;
@@ -170,210 +144,228 @@ export async function getStudentsFiltered(opts: {
   years?: string[];
   degreeType?: string;
 } = {}): Promise<StoredStudent[]> {
-  const sb = getSupabase();
-  let query = sb.from("student_full_view").select("*");
+  const pool = getPool();
+  let queryStr = "SELECT * FROM student_full_view WHERE 1=1";
+  const params: any[] = [];
 
-  // College filter
-  const colleges = opts.colleges?.length
-    ? opts.colleges
-    : opts.college
-    ? [opts.college]
-    : [];
+  const colleges = opts.colleges?.length ? opts.colleges : opts.college ? [opts.college] : [];
   if (colleges.length > 0) {
-    query = query.in("college", colleges);
+    queryStr += ` AND college IN (${colleges.map(() => "?").join(",")})`;
+    params.push(...colleges);
   }
 
-  // Course (Department) filter
   if (opts.courses?.length) {
-    query = query.in("department", opts.courses);
+    queryStr += ` AND department IN (${opts.courses.map(() => "?").join(",")})`;
+    params.push(...opts.courses);
   }
 
-  // Year filter
   if (opts.years?.length) {
-    query = query.in("year", opts.years);
+    queryStr += ` AND year IN (${opts.years.map(() => "?").join(",")})`;
+    params.push(...opts.years);
   }
 
-  // Degree Type filter
   if (opts.degreeType && opts.degreeType !== "all") {
-    query = query.eq("degreeType", opts.degreeType);
+    queryStr += " AND degreeType = ?";
+    params.push(opts.degreeType);
   }
 
-  const { data, error } = await query.order("importSequence", { ascending: true }).order("created_at", { ascending: true });
-  if (error) throw new Error(`getStudentsFiltered: ${error.message}`);
+  queryStr += " ORDER BY importSequence ASC, created_at ASC";
 
-  return (data as any[]).map(fromRow);
+  const [rows] = await pool.query(queryStr, params);
+  return (rows as any[]).map(fromRow);
 }
 
-/**
- * Insert or update a single student (upsert by registrationNumber).
- * Since this now spans multiple tables, we use a series of upserts.
- * For production, consider using a Supabase RPC to wrap this in a transaction.
- */
 export async function upsertStudent(
   input: StudentData & { college?: string }
 ): Promise<StoredStudent> {
-  const sb = getSupabase();
-  const computed = computeScores(input);
-  const collegeName = input.college || "";
-  const stream = input.stream || "engineering";
-  const degreeType = input.degreeType || "ug";
+  const pool = getPool();
+  const conn = await pool.getConnection();
+  await conn.beginTransaction();
 
-  // 1. Upsert College
-  const { data: colData, error: colErr } = await sb
-    .from("colleges")
-    .upsert({ name: collegeName, stream, degree_type: degreeType }, { onConflict: "name" })
-    .select("id")
-    .single();
-  if (colErr) throw new Error(`upsertStudent (college): ${colErr.message}`);
-  const collegeId = colData.id;
+  try {
+    const computed = computeScores(input);
+    const collegeName = input.college || "";
+    const stream = input.stream || "engineering";
+    const degreeType = input.degreeType || "ug";
 
-  // 2. Upsert Department
-  const { data: deptData, error: deptErr } = await sb
-    .from("departments")
-    .upsert({ college_id: collegeId, name: computed.department }, { onConflict: "college_id, name" })
-    .select("id")
-    .single();
-  if (deptErr) throw new Error(`upsertStudent (dept): ${deptErr.message}`);
-  const departmentId = deptData.id;
+    // 1. Upsert College
+    let collegeId = crypto.randomUUID();
+    const [colRows] = await conn.query("SELECT id FROM colleges WHERE name = ?", [collegeName]);
+    if (Array.isArray(colRows) && colRows.length > 0) {
+      collegeId = (colRows[0] as any).id;
+      await conn.query(
+        "UPDATE colleges SET stream = ?, degree_type = ? WHERE id = ?",
+        [stream, degreeType, collegeId]
+      );
+    } else {
+      await conn.query(
+        "INSERT INTO colleges (id, name, stream, degree_type) VALUES (?, ?, ?, ?)",
+        [collegeId, collegeName, stream, degreeType]
+      );
+    }
 
-  // 3. Upsert Student Identity
-  const studentPayload = {
-    registration_number: computed.registrationNumber,
-    name: computed.name,
-    email: computed.email || null,
-    phone: computed.phone || null,
-    college_id: collegeId,
-    department_id: departmentId,
-    year: computed.year,
-    stream: stream,
-    degree_type: degreeType,
-    import_sequence: computed.importSequence || null,
-    updated_at: new Date().toISOString()
-  };
+    // 2. Upsert Department
+    let departmentId = crypto.randomUUID();
+    const [deptRows] = await conn.query("SELECT id FROM departments WHERE college_id = ? AND name = ?", [collegeId, computed.department]);
+    if (Array.isArray(deptRows) && deptRows.length > 0) {
+      departmentId = (deptRows[0] as any).id;
+    } else {
+      await conn.query(
+        "INSERT INTO departments (id, college_id, name) VALUES (?, ?, ?)",
+        [departmentId, collegeId, computed.department]
+      );
+    }
 
-  const { data: stuData, error: stuErr } = await sb
-    .from("students")
-    .upsert(studentPayload, { onConflict: "registration_number" })
-    .select("id, created_at")
-    .single();
-  if (stuErr) throw new Error(`upsertStudent (identity): ${stuErr.message}`);
-  const studentId = stuData.id;
+    // 3. Upsert Student Identity
+    let studentId = (computed as any).id || crypto.randomUUID();
+    const [stuRows] = await conn.query("SELECT id FROM students WHERE registration_number = ?", [computed.registrationNumber]);
+    if (Array.isArray(stuRows) && stuRows.length > 0) {
+      studentId = (stuRows[0] as any).id;
+      await conn.query(
+        `UPDATE students SET 
+          name = ?, email = ?, phone = ?, college_id = ?, department_id = ?, 
+          year = ?, stream = ?, degree_type = ?, import_sequence = ?, updated_at = NOW() 
+         WHERE id = ?`,
+        [
+          computed.name, computed.email || null, computed.phone || null, collegeId, departmentId,
+          computed.year, stream, degreeType, computed.importSequence || null, studentId
+        ]
+      );
+    } else {
+      await conn.query(
+        `INSERT INTO students 
+          (id, registration_number, name, email, phone, college_id, department_id, year, stream, degree_type, import_sequence) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          studentId, computed.registrationNumber, computed.name, computed.email || null, computed.phone || null,
+          collegeId, departmentId, computed.year, stream, degreeType, computed.importSequence || null
+        ]
+      );
+    }
 
-  // 4. Update Tier Tables in parallel
-  const promises = [
-    sb.from("student_academic").upsert({
-      student_id: studentId,
-      x_marks: computed.xMarks,
-      xii_marks: computed.xiiMarks,
-      ug_percentage: computed.ugPercentage,
-      pg_percentage: computed.pgPercentage,
-      no_of_arrears: computed.noOfArrears,
-      history_of_arrears: computed.historyOfArrears,
-      ug_semester_marks: computed.ugSemesterMarks || [],
-      pg_semester_marks: computed.pgSemesterMarks || [],
-      x_marksheet_url: computed.xMarksheetUrl || null,
-      xii_marksheet_url: computed.xiiMarksheetUrl || null
-    }),
-    sb.from("student_aptitude").upsert({
-      student_id: studentId,
-      quants: computed.quants,
-      logical: computed.logical,
-      verbal: computed.verbal
-    }),
-    sb.from("student_communication").upsert({
-      student_id: studentId,
-      cefr_grammar: computed.cefrGrammar,
-      ef_set_listening: computed.efSetListening,
-      ef_set_speaking: computed.efSetSpeaking,
-      ef_set_reading: computed.efSetReading,
-      ef_set_writing: computed.efSetWriting,
-      cert_urls: computed.certUrls || {}
-    }),
-    sb.from("student_technical").upsert({
-      student_id: studentId,
-      leetcode_rank: computed.leetcodeRank ? String(computed.leetcodeRank) : "",
-      leetcode_url: computed.leetcodeUrl,
-      github_url: computed.githubUrl,
-      fop_assessment: computed.fopAssessment,
-      dsa_assessment: computed.dsaAssessment,
-      internal_codeathon: computed.internalCodeathon,
-      external_codeathon: computed.externalCodeathon,
-      github_projects: computed.githubProjects,
-      full_length_projects: computed.fullLengthProjects,
-      internal_codeathon_details: computed.internalCodeathonDetails || [],
-      external_codeathon_details: computed.externalCodeathonDetails || [],
-      full_length_project_details: computed.fullLengthProjectDetails || []
-    }),
-    sb.from("student_industry").upsert({
-      student_id: studentId,
-      global_certification: computed.globalCertification,
-      other_certifications: computed.otherCertifications,
-      global_cert_details: computed.globalCertDetails || [],
-      other_cert_details: computed.otherCertDetails || []
-    }),
-    sb.from("student_scores").upsert({
-      student_id: studentId,
-      x_score: computed.xScore,
-      xii_score: computed.xiiScore,
-      ug_score: computed.ugScore,
-      academic_aggregate: computed.academicAggregate,
-      no_of_arrears_score: computed.noOfArrearsScore,
-      history_arrears_score: computed.historyArrearsScore,
-      standing_arrears: computed.standingArrears,
-      quants_score: computed.quantsScore,
-      logical_score: computed.logicalScore,
-      verbal_score: computed.verbalScore,
-      aptitude_total: computed.aptitudeTotal,
-      cefr_grammar_score: computed.cefrGrammarScore,
-      ef_listening_score: computed.efListeningScore,
-      ef_speaking_score: computed.efSpeakingScore,
-      ef_reading_score: computed.efReadingScore,
-      ef_writing_score: computed.efWritingScore,
-      communication_total: computed.communicationTotal,
-      coding_practice: computed.codingPractice,
-      coding_assessment: computed.codingAssessment,
-      codeathon_hackathon: computed.codeathonHackathon,
-      mini_projects: computed.miniProjects,
-      full_length_project_score: computed.fullLengthProjectScore,
-      global_cert_score: computed.globalCertScore,
-      other_cert_score: computed.otherCertScore,
-      academic_regulatory: computed.academicRegulatory,
-      cognitive_linguistic: computed.cognitiveLinguistic,
-      technical_proficiency: computed.technicalProficiency,
-      industry_validation: computed.industryValidation,
-      hire_score: computed.hireScore
-    })
-  ];
+    // 4. Upsert Tier Tables (ON DUPLICATE KEY UPDATE)
+    
+    // Tier 1: Academic
+    await conn.query(
+      `INSERT INTO student_academic 
+        (student_id, x_marks, xii_marks, ug_percentage, pg_percentage, no_of_arrears, history_of_arrears, ug_semester_marks, pg_semester_marks, x_marksheet_url, xii_marksheet_url) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
+       ON DUPLICATE KEY UPDATE 
+        x_marks = VALUES(x_marks), xii_marks = VALUES(xii_marks), ug_percentage = VALUES(ug_percentage), pg_percentage = VALUES(pg_percentage), 
+        no_of_arrears = VALUES(no_of_arrears), history_of_arrears = VALUES(history_of_arrears), ug_semester_marks = VALUES(ug_semester_marks), 
+        pg_semester_marks = VALUES(pg_semester_marks), x_marksheet_url = VALUES(x_marksheet_url), xii_marksheet_url = VALUES(xii_marksheet_url)`,
+      [
+        studentId, computed.xMarks, computed.xiiMarks, computed.ugPercentage, computed.pgPercentage,
+        computed.noOfArrears, computed.historyOfArrears, JSON.stringify(computed.ugSemesterMarks || []),
+        JSON.stringify(computed.pgSemesterMarks || []), computed.xMarksheetUrl || null, computed.xiiMarksheetUrl || null
+      ]
+    );
 
-  const results = await Promise.all(promises);
-  const err = results.find(r => r.error);
-  if (err) throw new Error(`upsertStudent (tier update): ${err.error?.message}`);
+    // Tier 2: Aptitude
+    await conn.query(
+      `INSERT INTO student_aptitude (student_id, quants, logical, verbal) 
+       VALUES (?, ?, ?, ?) 
+       ON DUPLICATE KEY UPDATE quants = VALUES(quants), logical = VALUES(logical), verbal = VALUES(verbal)`,
+      [studentId, computed.quants, computed.logical, computed.verbal]
+    );
 
-  // 5. Return full record
-  return {
-    ...computed,
-    id: studentId,
-    college: collegeName,
-    createdAt: stuData.created_at
-  };
+    // Tier 2: Communication
+    await conn.query(
+      `INSERT INTO student_communication (student_id, cefr_grammar, ef_set_listening, ef_set_speaking, ef_set_reading, ef_set_writing, cert_urls) 
+       VALUES (?, ?, ?, ?, ?, ?, ?) 
+       ON DUPLICATE KEY UPDATE 
+        cefr_grammar = VALUES(cefr_grammar), ef_set_listening = VALUES(ef_set_listening), ef_set_speaking = VALUES(ef_set_speaking), 
+        ef_set_reading = VALUES(ef_set_reading), ef_set_writing = VALUES(ef_set_writing), cert_urls = VALUES(cert_urls)`,
+      [
+        studentId, computed.cefrGrammar, computed.efSetListening, computed.efSetSpeaking,
+        computed.efSetReading, computed.efSetWriting, JSON.stringify(computed.certUrls || {})
+      ]
+    );
+
+    // Tier 3: Technical
+    await conn.query(
+      `INSERT INTO student_technical 
+        (student_id, leetcode_rank, leetcode_url, github_url, fop_assessment, dsa_assessment, internal_codeathon, external_codeathon, github_projects, full_length_projects, internal_codeathon_details, external_codeathon_details, full_length_project_details) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
+       ON DUPLICATE KEY UPDATE 
+        leetcode_rank = VALUES(leetcode_rank), leetcode_url = VALUES(leetcode_url), github_url = VALUES(github_url), 
+        fop_assessment = VALUES(fop_assessment), dsa_assessment = VALUES(dsa_assessment), internal_codeathon = VALUES(internal_codeathon), 
+        external_codeathon = VALUES(external_codeathon), github_projects = VALUES(github_projects), full_length_projects = VALUES(full_length_projects), 
+        internal_codeathon_details = VALUES(internal_codeathon_details), external_codeathon_details = VALUES(external_codeathon_details), 
+        full_length_project_details = VALUES(full_length_project_details)`,
+      [
+        studentId, computed.leetcodeRank ? String(computed.leetcodeRank) : "", computed.leetcodeUrl, computed.githubUrl,
+        computed.fopAssessment, computed.dsaAssessment, computed.internalCodeathon, computed.externalCodeathon,
+        computed.githubProjects, computed.fullLengthProjects, JSON.stringify(computed.internalCodeathonDetails || []),
+        JSON.stringify(computed.externalCodeathonDetails || []), JSON.stringify(computed.fullLengthProjectDetails || [])
+      ]
+    );
+
+    // Tier 4: Industry
+    await conn.query(
+      `INSERT INTO student_industry (student_id, global_certification, other_certifications, global_cert_details, other_cert_details) 
+       VALUES (?, ?, ?, ?, ?) 
+       ON DUPLICATE KEY UPDATE 
+        global_certification = VALUES(global_certification), other_certifications = VALUES(other_certifications), 
+        global_cert_details = VALUES(global_cert_details), other_cert_details = VALUES(other_cert_details)`,
+      [
+        studentId, computed.globalCertification, computed.otherCertifications,
+        JSON.stringify(computed.globalCertDetails || []), JSON.stringify(computed.otherCertDetails || [])
+      ]
+    );
+
+    // Scores
+    await conn.query(
+      `INSERT INTO student_scores 
+        (student_id, x_score, xii_score, ug_score, academic_aggregate, no_of_arrears_score, history_arrears_score, standing_arrears, quants_score, logical_score, verbal_score, aptitude_total, cefr_grammar_score, ef_listening_score, ef_speaking_score, ef_reading_score, ef_writing_score, communication_total, coding_practice, coding_assessment, codeathon_hackathon, mini_projects, full_length_project_score, global_cert_score, other_cert_score, academic_regulatory, cognitive_linguistic, technical_proficiency, industry_validation, hire_score) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
+       ON DUPLICATE KEY UPDATE 
+        x_score = VALUES(x_score), xii_score = VALUES(xii_score), ug_score = VALUES(ug_score), academic_aggregate = VALUES(academic_aggregate), 
+        no_of_arrears_score = VALUES(no_of_arrears_score), history_arrears_score = VALUES(history_arrears_score), standing_arrears = VALUES(standing_arrears), 
+        quants_score = VALUES(quants_score), logical_score = VALUES(logical_score), verbal_score = VALUES(verbal_score), 
+        aptitude_total = VALUES(aptitude_total), cefr_grammar_score = VALUES(cefr_grammar_score), ef_listening_score = VALUES(ef_listening_score), 
+        ef_speaking_score = VALUES(ef_speaking_score), ef_reading_score = VALUES(ef_reading_score), ef_writing_score = VALUES(ef_writing_score), 
+        communication_total = VALUES(communication_total), coding_practice = VALUES(coding_practice), coding_assessment = VALUES(coding_assessment), 
+        codeathon_hackathon = VALUES(codeathon_hackathon), mini_projects = VALUES(mini_projects), full_length_project_score = VALUES(full_length_project_score), 
+        global_cert_score = VALUES(global_cert_score), other_cert_score = VALUES(other_cert_score), academic_regulatory = VALUES(academic_regulatory), 
+        cognitive_linguistic = VALUES(cognitive_linguistic), technical_proficiency = VALUES(technical_proficiency), 
+        industry_validation = VALUES(industry_validation), hire_score = VALUES(hire_score)`,
+      [
+        studentId, computed.xScore, computed.xiiScore, computed.ugScore, computed.academicAggregate,
+        computed.noOfArrearsScore, computed.historyArrearsScore, computed.standingArrears, computed.quantsScore,
+        computed.logicalScore, computed.verbalScore, computed.aptitudeTotal, computed.cefrGrammarScore,
+        computed.efListeningScore, computed.efSpeakingScore, computed.efReadingScore, computed.efWritingScore,
+        computed.communicationTotal, computed.codingPractice, computed.codingAssessment, computed.codeathonHackathon,
+        computed.miniProjects, computed.fullLengthProjectScore, computed.globalCertScore, computed.otherCertScore,
+        computed.academicRegulatory, computed.cognitiveLinguistic, computed.technicalProficiency,
+        computed.industryValidation, computed.hireScore
+      ]
+    );
+
+    await conn.commit();
+
+    const [resRows] = await conn.query("SELECT * FROM student_full_view WHERE id = ?", [studentId]);
+    return fromRow((resRows as any[])[0]);
+
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
 }
 
-/**
- * Bulk insert/update students. Processes in batches of 50 for performance.
- */
 export async function bulkUpsert(
   records: (StudentData & { college?: string })[]
 ): Promise<StoredStudent[]> {
   const results: StoredStudent[] = [];
-
-  // Process in batches to avoid overwhelming the connection
   const BATCH = 50;
+
   for (let i = 0; i < records.length; i += BATCH) {
     const batch = records.slice(i, i + BATCH);
-    // Add import sequence number to maintain Excel order
     const batchWithSequence = batch.map((record, batchIndex) => ({
       ...record,
-      importSequence: i + batchIndex + 1 // 1-based sequence number
+      importSequence: i + batchIndex + 1
     }));
     const batchResults = await Promise.all(batchWithSequence.map((r) => upsertStudent(r)));
     results.push(...batchResults);
@@ -382,166 +374,121 @@ export async function bulkUpsert(
   return results;
 }
 
-/**
- * Recalculate all scores in memory and save to database in a bulk query.
- */
 export async function recalculateAllScores(): Promise<number> {
-  const sb = getSupabase();
   const students = await getAllStudents();
   if (students.length === 0) return 0;
 
-  const scoresToUpsert = students.map((student) => {
-    const computed = computeScores(student);
-    return {
-      student_id: student.id,
-      x_score: computed.xScore,
-      xii_score: computed.xiiScore,
-      ug_score: computed.ugScore,
-      academic_aggregate: computed.academicAggregate,
-      no_of_arrears_score: computed.noOfArrearsScore,
-      history_arrears_score: computed.historyArrearsScore,
-      standing_arrears: computed.standingArrears,
-      quants_score: computed.quantsScore,
-      logical_score: computed.logicalScore,
-      verbal_score: computed.verbalScore,
-      aptitude_total: computed.aptitudeTotal,
-      cefr_grammar_score: computed.cefrGrammarScore,
-      ef_listening_score: computed.efListeningScore,
-      ef_speaking_score: computed.efSpeakingScore,
-      ef_reading_score: computed.efReadingScore,
-      ef_writing_score: computed.efWritingScore,
-      communication_total: computed.communicationTotal,
-      coding_practice: computed.codingPractice,
-      coding_assessment: computed.codingAssessment,
-      codeathon_hackathon: computed.codeathonHackathon,
-      mini_projects: computed.miniProjects,
-      full_length_project_score: computed.fullLengthProjectScore,
-      global_cert_score: computed.globalCertScore,
-      other_cert_score: computed.otherCertScore,
-      academic_regulatory: computed.academicRegulatory,
-      cognitive_linguistic: computed.cognitiveLinguistic,
-      technical_proficiency: computed.technicalProficiency,
-      industry_validation: computed.industryValidation,
-      hire_score: computed.hireScore,
-    };
-  });
+  const pool = getPool();
+  const conn = await pool.getConnection();
+  await conn.beginTransaction();
 
-  const { error } = await sb.from("student_scores").upsert(scoresToUpsert);
-  if (error) throw new Error(`recalculateAllScores: ${error.message}`);
-
-  return students.length;
+  try {
+    for (const student of students) {
+      const computed = computeScores(student);
+      await conn.query(
+        `UPDATE student_scores SET 
+          x_score = ?, xii_score = ?, ug_score = ?, academic_aggregate = ?, no_of_arrears_score = ?, 
+          history_arrears_score = ?, standing_arrears = ?, quants_score = ?, logical_score = ?, verbal_score = ?, 
+          aptitude_total = ?, cefr_grammar_score = ?, ef_listening_score = ?, ef_speaking_score = ?, ef_reading_score = ?, 
+          ef_writing_score = ?, communication_total = ?, coding_practice = ?, coding_assessment = ?, codeathon_hackathon = ?, 
+          mini_projects = ?, full_length_project_score = ?, global_cert_score = ?, other_cert_score = ?, academic_regulatory = ?, 
+          cognitive_linguistic = ?, technical_proficiency = ?, industry_validation = ?, hire_score = ? 
+         WHERE student_id = ?`,
+        [
+          computed.xScore, computed.xiiScore, computed.ugScore, computed.academicAggregate, computed.noOfArrearsScore,
+          computed.historyArrearsScore, computed.standingArrears, computed.quantsScore, computed.logicalScore, computed.verbalScore,
+          computed.aptitudeTotal, computed.cefrGrammarScore, computed.efListeningScore, computed.efSpeakingScore, computed.efReadingScore,
+          computed.efWritingScore, computed.communicationTotal, computed.codingPractice, computed.codingAssessment, computed.codeathonHackathon,
+          computed.miniProjects, computed.fullLengthProjectScore, computed.globalCertScore, computed.otherCertScore, computed.academicRegulatory,
+          computed.cognitiveLinguistic, computed.technicalProficiency, computed.industryValidation, computed.hireScore,
+          student.id
+        ]
+      );
+    }
+    await conn.commit();
+    return students.length;
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
 }
 
-
-/**
- * Delete a student by their internal UUID.
- */
 export async function deleteStudentById(id: string): Promise<boolean> {
-  const sb = getSupabase();
-  const { error, count } = await sb
-    .from("students")
-    .delete({ count: "exact" })
-    .eq("id", id);
-
-  if (error) throw new Error(`deleteStudentById: ${error.message}`);
-  return (count ?? 0) > 0;
+  const pool = getPool();
+  const [res] = await pool.query("DELETE FROM students WHERE id = ?", [id]);
+  return ((res as any).affectedRows || 0) > 0;
 }
 
-/**
- * Delete students by 1-based row range (e.g. "1-10", "5").
- * Matches the SQLite version's behaviour.
- */
 export async function deleteByRange(range: string): Promise<number> {
-  const sb = getSupabase();
+  const pool = getPool();
   const match = range.trim().match(/^(\d+)(?:-(\d+))?$/);
   if (!match) return 0;
 
-  const from = parseInt(match[1]) - 1;          // 0-based offset
+  const from = parseInt(match[1]) - 1;
   const count = match[2] ? parseInt(match[2]) - from : 1;
 
-  // Fetch the IDs in that range
-  const { data, error: fetchErr } = await sb
-    .from("students")
-    .select("id")
-    .order("created_at", { ascending: true })
-    .range(from, from + count - 1);
+  const [rows] = await pool.query(
+    "SELECT id FROM students ORDER BY created_at ASC LIMIT ? OFFSET ?",
+    [count, from]
+  );
+  if (!Array.isArray(rows) || rows.length === 0) return 0;
 
-  if (fetchErr) throw new Error(`deleteByRange (fetch): ${fetchErr.message}`);
-  if (!data?.length) return 0;
-
-  const ids = (data as { id: string }[]).map((r) => r.id);
-  const { error: delErr, count: deleted } = await sb
-    .from("students")
-    .delete({ count: "exact" })
-    .in("id", ids);
-
-  if (delErr) throw new Error(`deleteByRange (delete): ${delErr.message}`);
-  return deleted ?? 0;
+  const ids = (rows as any[]).map((r) => r.id);
+  const [res] = await pool.query(
+    `DELETE FROM students WHERE id IN (${ids.map(() => "?").join(",")})`,
+    ids
+  );
+  return (res as any).affectedRows || 0;
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
-/**
- * Read the main settings object.
- */
 export async function getSettingsFromDb(): Promise<Record<string, unknown> | null> {
-  const sb = getSupabase();
-  const { data, error } = await sb
-    .from("settings")
-    .select("value")
-    .eq("key", "main")
-    .maybeSingle();
-
-  if (error) throw new Error(`getSettingsFromDb: ${error.message}`);
-  return data ? (data.value as Record<string, unknown>) : null;
+  const pool = getPool();
+  const [rows] = await pool.query("SELECT value FROM settings WHERE `key` = 'main'");
+  if (Array.isArray(rows) && rows.length > 0) {
+    const row = rows[0] as any;
+    return parseJSON(row.value);
+  }
+  return null;
 }
 
-/**
- * Save the main settings object.
- */
 export async function saveSettingsToDb(value: Record<string, unknown>): Promise<void> {
-  const sb = getSupabase();
-  const { error } = await sb
-    .from("settings")
-    .upsert({ key: "main", value }, { onConflict: "key" });
-
-  if (error) throw new Error(`saveSettingsToDb: ${error.message}`);
+  const pool = getPool();
+  await pool.query(
+    "INSERT INTO settings (`key`, value) VALUES ('main', ?) ON DUPLICATE KEY UPDATE value = ?",
+    [JSON.stringify(value), JSON.stringify(value)]
+  );
 }
 
 // ── Share tokens ──────────────────────────────────────────────────────────────
 
-export interface ShareTokenRow {
-  id: string;
-  college_name: string;
-  colleges: string[];
-  courses: string[];
-  years: string[];
-  token: string;
-  created_at: string;
-  last_accessed: string | null;
-}
-
 export async function getAllShareTokens(): Promise<ShareTokenRow[]> {
-  const sb = getSupabase();
-  const { data, error } = await sb
-    .from("share_tokens")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  if (error) throw new Error(`getAllShareTokens: ${error.message}`);
-  return (data ?? []) as ShareTokenRow[];
+  const pool = getPool();
+  const [rows] = await pool.query("SELECT * FROM share_tokens ORDER BY created_at DESC");
+  return (rows as any[]).map(r => ({
+    ...r,
+    colleges: parseJSON(r.colleges) || [],
+    courses: parseJSON(r.courses) || [],
+    years: parseJSON(r.years) || [],
+  }));
 }
 
 export async function getShareTokenByToken(token: string): Promise<ShareTokenRow | null> {
-  const sb = getSupabase();
-  const { data, error } = await sb
-    .from("share_tokens")
-    .select("*")
-    .eq("token", token)
-    .maybeSingle();
-
-  if (error) throw new Error(`getShareTokenByToken: ${error.message}`);
-  return data as ShareTokenRow | null;
+  const pool = getPool();
+  const [rows] = await pool.query("SELECT * FROM share_tokens WHERE token = ?", [token]);
+  if (Array.isArray(rows) && rows.length > 0) {
+    const r = rows[0] as any;
+    return {
+      ...r,
+      colleges: parseJSON(r.colleges) || [],
+      courses: parseJSON(r.courses) || [],
+      years: parseJSON(r.years) || [],
+    };
+  }
+  return null;
 }
 
 export async function createShareToken(opts: {
@@ -549,20 +496,33 @@ export async function createShareToken(opts: {
   courses: string[];
   years: string[];
 }): Promise<ShareTokenRow> {
-  const sb = getSupabase();
+  const pool = getPool();
+  const id = crypto.randomUUID();
+  const token = crypto.randomUUID().replace(/-/g, "");
+  
+  // Format current time as MySQL DATETIME: 'YYYY-MM-DD HH:MM:SS'
+  const createdAt = new Date().toISOString().slice(0, 19).replace('T', ' ');
+  
   const row = {
-    id: crypto.randomUUID(),
+    id,
     college_name: opts.colleges[0] ?? "",
     colleges: opts.colleges,
     courses: opts.courses,
     years: opts.years,
-    token: crypto.randomUUID().replace(/-/g, ""),
-    created_at: new Date().toISOString(),
+    token,
+    created_at: createdAt,
     last_accessed: null,
   };
 
-  const { error } = await sb.from("share_tokens").insert(row);
-  if (error) throw new Error(`createShareToken: ${error.message}`);
+  await pool.query(
+    `INSERT INTO share_tokens (id, college_name, colleges, courses, years, token, created_at, last_accessed) 
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id, row.college_name, JSON.stringify(row.colleges), JSON.stringify(row.courses), 
+      JSON.stringify(row.years), token, createdAt, null
+    ]
+  );
+
   return row;
 }
 
@@ -570,32 +530,22 @@ export async function updateShareToken(
   id: string,
   opts: { colleges: string[]; courses: string[]; years: string[] }
 ): Promise<void> {
-  const sb = getSupabase();
-  const { error } = await sb
-    .from("share_tokens")
-    .update({
-      college_name: opts.colleges[0] ?? "",
-      colleges: opts.colleges,
-      courses: opts.courses,
-      years: opts.years,
-    })
-    .eq("id", id);
-
-  if (error) throw new Error(`updateShareToken: ${error.message}`);
+  const pool = getPool();
+  await pool.query(
+    "UPDATE share_tokens SET college_name = ?, colleges = ?, courses = ?, years = ? WHERE id = ?",
+    [opts.colleges[0] ?? "", JSON.stringify(opts.colleges), JSON.stringify(opts.courses), JSON.stringify(opts.years), id]
+  );
 }
 
 export async function touchShareToken(token: string): Promise<void> {
-  const sb = getSupabase();
-  await sb
-    .from("share_tokens")
-    .update({ last_accessed: new Date().toISOString() })
-    .eq("token", token);
+  const pool = getPool();
+  const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+  await pool.query("UPDATE share_tokens SET last_accessed = ? WHERE token = ?", [now, token]);
 }
 
 export async function deleteShareToken(id: string): Promise<void> {
-  const sb = getSupabase();
-  const { error } = await sb.from("share_tokens").delete().eq("id", id);
-  if (error) throw new Error(`deleteShareToken: ${error.message}`);
+  const pool = getPool();
+  await pool.query("DELETE FROM share_tokens WHERE id = ?", [id]);
 }
 
 // ── Audit Log ─────────────────────────────────────────────────────────────────
@@ -605,51 +555,72 @@ export async function logSubmission(
   actionType: string,
   payload: any
 ): Promise<void> {
-  const sb = getSupabase();
-  const { error } = await sb.from("student_submissions_log").insert({
-    action_type: actionType,
-    name: payload.name,
-    registration_number: registrationNumber,
-    department: payload.department,
-    year: payload.year,
-    phone: payload.phone,
-    email: payload.email,
-    college: payload.college,
-    stream: payload.stream,
-    degree_type: payload.degreeType,
-    x_marks: payload.xMarks,
-    xii_marks: payload.xiiMarks,
-    ug_percentage: payload.ugPercentage,
-    pg_percentage: payload.pgPercentage,
-    no_of_arrears: payload.noOfArrears,
-    history_of_arrears: payload.historyOfArrears,
-    x_marksheet_url: payload.xMarksheetUrl,
-    xii_marksheet_url: payload.xiiMarksheetUrl,
-    ug_semester_marks: payload.ugSemesterMarks,
-    pg_semester_marks: payload.pgSemesterMarks,
-    cefr_grammar: payload.cefrGrammar,
-    ef_set_listening: payload.efSetListening,
-    ef_set_speaking: payload.efSetSpeaking,
-    ef_set_reading: payload.efSetReading,
-    ef_set_writing: payload.efSetWriting,
-    cert_urls: payload.certUrls,
-    leetcode_rank: payload.leetcodeRank ? String(payload.leetcodeRank) : "",
-    leetcode_url: payload.leetcodeUrl,
-    github_url: payload.githubUrl,
-    fop_assessment: payload.fopAssessment,
-    dsa_assessment: payload.dsaAssessment,
-    internal_codeathon: payload.internalCodeathon,
-    external_codeathon: payload.externalCodeathon,
-    github_projects: payload.githubProjects,
-    full_length_projects: payload.fullLengthProjects,
-    internal_codeathon_details: payload.internalCodeathonDetails,
-    external_codeathon_details: payload.externalCodeathonDetails,
-    full_length_project_details: payload.fullLengthProjectDetails,
-    global_certification: payload.globalCertification,
-    other_certifications: payload.otherCertifications,
-    global_cert_details: payload.globalCertDetails,
-    other_cert_details: payload.otherCertDetails,
-  });
-  if (error) console.error("Failed to log submission:", error.message);
+  try {
+    const pool = getPool();
+    const id = crypto.randomUUID();
+    const createdAt = new Date().toISOString().slice(0, 19).replace('T', ' ');
+    
+    await pool.query(
+      `INSERT INTO student_submissions_log 
+        (id, action_type, created_at, name, registration_number, department, year, phone, email, college, stream, degree_type, 
+         x_marks, xii_marks, ug_percentage, pg_percentage, no_of_arrears, history_of_arrears, x_marksheet_url, xii_marksheet_url, 
+         ug_semester_marks, pg_semester_marks, ef_set_listening, ef_set_speaking, ef_set_reading, ef_set_writing, cert_urls, 
+         leetcode_rank, leetcode_url, github_url, fop_assessment, dsa_assessment, internal_codeathon, external_codeathon, 
+         github_projects, full_length_projects, internal_codeathon_details, external_codeathon_details, full_length_project_details, 
+         global_certification, other_certifications, global_cert_details, other_cert_details, cefr_grammar) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id, actionType, createdAt, payload.name, registrationNumber, payload.department, payload.year, payload.phone, payload.email,
+        payload.college, payload.stream, payload.degreeType, payload.xMarks, payload.xiiMarks, payload.ugPercentage, payload.pgPercentage,
+        payload.noOfArrears, payload.historyOfArrears, payload.xMarksheetUrl, payload.xiiMarksheetUrl,
+        JSON.stringify(payload.ugSemesterMarks || []), JSON.stringify(payload.pgSemesterMarks || []),
+        payload.efSetListening, payload.efSetSpeaking, payload.efSetReading, payload.efSetWriting, JSON.stringify(payload.certUrls || {}),
+        payload.leetcodeRank ? String(payload.leetcodeRank) : "", payload.leetcodeUrl, payload.githubUrl,
+        payload.fopAssessment, payload.dsaAssessment, payload.internalCodeathon, payload.externalCodeathon,
+        payload.githubProjects, payload.fullLengthProjects, JSON.stringify(payload.internalCodeathonDetails || []),
+        JSON.stringify(payload.externalCodeathonDetails || []), JSON.stringify(payload.fullLengthProjectDetails || []),
+        payload.globalCertification, payload.otherCertifications, JSON.stringify(payload.globalCertDetails || []),
+        JSON.stringify(payload.otherCertDetails || []), payload.cefrGrammar
+      ]
+    );
+  } catch (error: any) {
+    console.error("Failed to log submission:", error.message);
+  }
 }
 
+// ── Refactoring Helper Operations ─────────────────────────────────────────────
+
+export async function syncStudentsDegreeTypeInDb(settings: any): Promise<void> {
+  const pool = getPool();
+  for (const col of settings.colleges) {
+    const [colRows] = await pool.query("SELECT id FROM colleges WHERE name = ?", [col.name]);
+    if (!Array.isArray(colRows) || colRows.length === 0) continue;
+    const collegeId = (colRows[0] as any).id;
+
+    for (const co of col.courses) {
+      const [deptRows] = await pool.query("SELECT id FROM departments WHERE college_id = ? AND name = ?", [collegeId, co.name]);
+      if (!Array.isArray(deptRows) || deptRows.length === 0) continue;
+      const deptId = (deptRows[0] as any).id;
+
+      await pool.query(
+        "UPDATE students SET degree_type = ? WHERE college_id = ? AND department_id = ?",
+        [co.degreeType, collegeId, deptId]
+      );
+    }
+  }
+}
+
+export async function renameDepartmentInDb(collegeName: string, oldName: string, newName: string): Promise<number> {
+  const pool = getPool();
+  const [colRows] = await pool.query("SELECT id FROM colleges WHERE name = ?", [collegeName]);
+  if (!Array.isArray(colRows) || colRows.length === 0) {
+    throw new Error("College not found");
+  }
+  const collegeId = (colRows[0] as any).id;
+
+  const [res] = await pool.query(
+    "UPDATE departments SET name = ? WHERE college_id = ? AND name = ?",
+    [newName, collegeId, oldName]
+  );
+  return (res as any).affectedRows || 0;
+}
