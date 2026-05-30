@@ -98,7 +98,7 @@ export interface StudentData {
   globalCertDetails?: { name: string; issuer: string; link: string; fileUrl?: string }[];
   otherCertDetails?: { name: string; issuer: string; link: string; fileUrl?: string }[];
 
-  // Document URLs (stored in Supabase Storage)
+  // Document URLs (stored in Hostinger FTP uploads)
   xMarksheetUrl?: string;
   xiiMarksheetUrl?: string;
   certUrls?: {
