@@ -1,4 +1,4 @@
-// Pure TypeScript HTML string builder for V1 layout â€” matches the red-themed V1 UI.
+// Pure TypeScript HTML string builder for V1 layout - matches the red-themed V1 UI.
 // No React, no react-dom/server. Safe to import in Next.js API route handlers.
 import { StoredStudent } from "./db";
 
@@ -219,7 +219,7 @@ export function buildPdfHtmlV1(s: StoredStudent, allStudents: StoredStudent[]): 
     {
       area: "Aptitude",
       tip: s.aptitudeTotal < 120 ? "Target 120+ Across Quants, Logical & Verbal" : "Strong aptitude performance",
-      action: s.aptitudeTotal < 120 ? "Practice Daily Aptitude Tests For 30â€“45 Min" : null,
+      action: s.aptitudeTotal < 120 ? "Practice Daily Aptitude Tests For 30-45 Min" : null,
     },
     {
       area: "Communication",
@@ -229,7 +229,7 @@ export function buildPdfHtmlV1(s: StoredStudent, allStudents: StoredStudent[]): 
     {
       area: "Coding Practice",
       tip: s.codingPractice < 100 ? "Improve Leetcode Rank Below 150k" : "Strong coding practice",
-      action: s.codingPractice < 100 ? "Solve 2â€“3 Problems Daily On Leetcode" : null,
+      action: s.codingPractice < 100 ? "Solve 2-3 Problems Daily On Leetcode" : null,
     },
   ];
 
@@ -253,7 +253,7 @@ export function buildPdfHtmlV1(s: StoredStudent, allStudents: StoredStudent[]): 
   const body = `
 <div style="width:820px;background:#f2f2f2;font-family:Arial,Helvetica,sans-serif;padding:0 16px 16px;box-sizing:border-box;color:#0f172a">
 
-  <!-- LOGO BAR â€” gap above header for college/company logos -->
+  <!-- LOGO BAR - gap above header for college/company logos -->
   <div style="height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 8px;margin-bottom:4px">
     <!-- Left logo: site logo -->
     <div style="display:flex;align-items:center;width:120px;height:44px">
@@ -359,7 +359,7 @@ export function buildPdfHtmlV1(s: StoredStudent, allStudents: StoredStudent[]): 
 
   </div>
 
-  <!-- SEAL AREA â€” gap at bottom for official stamp -->
+  <!-- SEAL AREA - gap at bottom for official stamp -->
   <div style="height:40mm;border:1.5px dashed #d1d5db;border-radius:10px;display:flex;align-items:center;justify-content:space-between;padding:0 32px;background:#fafafa">
     <!-- Left: authorised signatory placeholder -->
     <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
