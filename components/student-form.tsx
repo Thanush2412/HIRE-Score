@@ -472,13 +472,19 @@ export function StudentForm({ onSuccess }: { onSuccess?: () => void }) {
         }
         return true;
       case 3:
-        const cefrFields: [string, string][] = [
+        const cefrFields: [keyof FormState, string][] = [
           ["cefrGrammar", "CEFR"],
-          ["efSetListening", "EF SET Listening"], ["efSetSpeaking", "EF SET Speaking"],
-          ["efSetReading", "EF SET Reading"], ["efSetWriting", "EF SET Writing"],
+          ["efSetListening", "EF SET Listening"],
+          ["efSetSpeaking", "EF SET Speaking"],
+          ["efSetReading", "EF SET Reading"],
+          ["efSetWriting", "EF SET Writing"],
         ];
         for (const [key, label] of cefrFields) {
-          if (!certUploads[key]) {
+          if (!form[key] || !(form[key] as string).trim()) {
+            setError(`Please select level for ${label}.`);
+            return false;
+          }
+          if (!certUploads[key as string]) {
             setError(`Please upload certificate for ${label}.`);
             return false;
           }
