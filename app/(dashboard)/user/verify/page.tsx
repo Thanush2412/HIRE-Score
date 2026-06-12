@@ -367,6 +367,86 @@ export default function UserVerifyPage() {
     setSelectedStudent(s);
   };
 
+  const handleExportCSV = () => {
+    const headers = [
+      "Name",
+      "Registration Number",
+      "College",
+      "Department",
+      "Year",
+      "Stream",
+      "Class X Marksheet",
+      "Class XII Marksheet",
+      "UG Semester Marksheet",
+      "CEFR Grammar",
+      "EF SET Listening",
+      "EF SET Speaking",
+      "EF SET Reading",
+      "EF SET Writing",
+      "Internal Codeathons",
+      "External Codeathons",
+      "Full Length Projects",
+      "Global Certifications"
+    ];
+
+    const rows = filteredStudents.map(s => {
+      const yn = (val: any) => (val ? "Yes" : "No");
+
+      const ugStatus = (s.ugSemesterMarks || []).some(sem => !!sem.fileUrl) ? "Yes" : "No";
+
+      const intCodeStatus = (s.internalCodeathonDetails || []).length > 0
+        ? ((s.internalCodeathonDetails || []).every(d => !!d.fileUrl) ? "Yes" : "No")
+        : "N/A";
+
+      const extCodeStatus = (s.externalCodeathonDetails || []).length > 0
+        ? ((s.externalCodeathonDetails || []).every(d => !!d.fileUrl) ? "Yes" : "No")
+        : "N/A";
+
+      const projStatus = (s.fullLengthProjectDetails || []).length > 0
+        ? ((s.fullLengthProjectDetails || []).every(d => !!d.fileUrl) ? "Yes" : "No")
+        : "N/A";
+
+      const globalCertStatus = (s.globalCertDetails || []).length > 0
+        ? ((s.globalCertDetails || []).every(d => !!d.fileUrl) ? "Yes" : "No")
+        : "N/A";
+
+      return [
+        s.name,
+        s.registrationNumber,
+        s.college || "",
+        s.department,
+        s.year,
+        s.stream || "",
+        yn(s.xMarksheetUrl),
+        yn(s.xiiMarksheetUrl),
+        ugStatus,
+        yn(s.certUrls?.cefrGrammar),
+        yn(s.certUrls?.efListening),
+        yn(s.certUrls?.efSpeaking),
+        yn(s.certUrls?.efReading),
+        yn(s.certUrls?.efWriting),
+        intCodeStatus,
+        extCodeStatus,
+        projStatus,
+        globalCertStatus
+      ];
+    });
+
+    const csvContent = "\uFEFF" + [headers, ...rows]
+      .map(row => row.map(val => `"${String(val).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `certificate_verification_report_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const isPDF = (url?: string) => {
     if (!url) return false;
     return url.toLowerCase().split("?")[0].endsWith(".pdf");
@@ -447,22 +527,30 @@ export default function UserVerifyPage() {
           <option value="missing_uploads">Missing Proofs / Files</option>
         </select>
 
-        {/* Clear Filters */}
-        {(selectedCollege !== "all" || selectedCourse !== "all" || selectedYear !== "all" || selectedStream !== "all" || uploadStatusFilter !== "all" || search !== "") && (
+        {/* Actions on the Right */}
+        <div className="flex items-center gap-3 ml-auto">
+          {(selectedCollege !== "all" || selectedCourse !== "all" || selectedYear !== "all" || selectedStream !== "all" || uploadStatusFilter !== "all" || search !== "") && (
+            <button
+              onClick={() => {
+                setSelectedCollege("all");
+                setSelectedCourse("all");
+                setSelectedYear("all");
+                setSelectedStream("all");
+                setUploadStatusFilter("all");
+                setSearch("");
+              }}
+              className="text-xs font-semibold text-destructive hover:underline cursor-pointer"
+            >
+              Clear all
+            </button>
+          )}
           <button
-            onClick={() => {
-              setSelectedCollege("all");
-              setSelectedCourse("all");
-              setSelectedYear("all");
-              setSelectedStream("all");
-              setUploadStatusFilter("all");
-              setSearch("");
-            }}
-            className="text-xs font-semibold text-destructive hover:underline ml-auto"
+            onClick={handleExportCSV}
+            className="h-9 px-3.5 rounded-xl border border-border hover:bg-muted text-xs font-semibold flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer bg-muted/20"
           >
-            Clear all
+            <Download className="h-3.5 w-3.5" /> Export Audit CSV
           </button>
-        )}
+        </div>
       </div>
 
       {/* ── Main Workspace: 3 Panels ── */}
