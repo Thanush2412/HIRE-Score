@@ -226,11 +226,16 @@ export async function getStudentsFiltered(opts: {
 export async function upsertStudent(
   input: StudentData & { college?: string },
   actionType: string = "SYSTEM_UPSERT",
-  skipReturn = false
+  skipReturn = false,
+  externalConn?: any
 ): Promise<StoredStudent> {
   const pool = getPool();
-  const conn = await pool.getConnection();
-  await conn.beginTransaction();
+  const conn = externalConn || await pool.getConnection();
+  const manageTx = !externalConn;
+
+  if (manageTx) {
+    await conn.beginTransaction();
+  }
 
   try {
     const computed = computeScores(input);
@@ -417,7 +422,9 @@ export async function upsertStudent(
       ]
     );
 
-    await conn.commit();
+    if (manageTx) {
+      await conn.commit();
+    }
 
     // Log the submission automatically
     await logSubmission(computed.registrationNumber, actionType, computed);
@@ -430,10 +437,14 @@ export async function upsertStudent(
     return fromRow((resRows as any[])[0]);
 
   } catch (err) {
-    await conn.rollback();
+    if (manageTx) {
+      await conn.rollback();
+    }
     throw err;
   } finally {
-    conn.release();
+    if (manageTx) {
+      conn.release();
+    }
   }
 }
 
@@ -442,25 +453,40 @@ export async function bulkUpsert(
   actionType: string = "EXCEL_IMPORT",
   skipReturn = false
 ): Promise<StoredStudent[]> {
-  const results: StoredStudent[] = [];
-  const BATCH = 50;
+  const pool = getPool();
+  const conn = await pool.getConnection();
+  await conn.beginTransaction();
 
-  for (let i = 0; i < records.length; i += BATCH) {
-    const batch = records.slice(i, i + BATCH);
-    const batchWithSequence = batch.map((record, batchIndex) => ({
-      ...record,
-      importSequence: i + batchIndex + 1
-    }));
-    const batchResults = await Promise.all(batchWithSequence.map((r) => upsertStudent(r, actionType, skipReturn)));
-    if (!skipReturn) {
-      results.push(...(batchResults.filter(Boolean) as StoredStudent[]));
+  try {
+    const results: StoredStudent[] = [];
+    
+    // Process records sequentially on the same connection in a single transaction
+    for (let i = 0; i < records.length; i++) {
+      const record = records[i];
+      const recordWithSequence = {
+        ...record,
+        importSequence: i + 1
+      };
+      
+      const res = await upsertStudent(recordWithSequence, actionType, skipReturn, conn);
+      if (!skipReturn) {
+        results.push(res);
+      }
     }
-  }
 
-  if (skipReturn) {
-    return new Array(records.length).fill(null) as any;
+    await conn.commit();
+
+    if (skipReturn) {
+      return new Array(records.length).fill(null) as any;
+    }
+    return results;
+
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
   }
-  return results;
 }
 
 export async function recalculateAllScores(): Promise<number> {
@@ -857,4 +883,14 @@ export async function updateStudentLeetcodeRank(
   } finally {
     conn.release();
   }
+}
+
+export async function getStudentsByRegNos(regNos: string[]): Promise<StoredStudent[]> {
+  if (regNos.length === 0) return [];
+  const pool = getPool();
+  const [rows] = await pool.query(
+    `SELECT * FROM student_full_view WHERE registrationNumber IN (${regNos.map(() => "?").join(",")})`,
+    regNos
+  );
+  return (rows as any[]).map(fromRow);
 }

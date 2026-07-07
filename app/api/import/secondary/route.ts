@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
-import { getAllStudents, bulkUpsert } from "@/lib/db";
+import { getStudentsByRegNos, bulkUpsert } from "@/lib/db";
 import { StudentData } from "@/lib/types";
 
 function parseNum(v: unknown): number {
@@ -90,8 +90,8 @@ export async function POST(req: NextRequest) {
       if (Object.keys(patch).length > 0) secMap.set(regNo, patch);
     }
 
-    // getAllStudents is now async
-    const existing = await getAllStudents();
+    const regNos = Array.from(secMap.keys());
+    const existing = await getStudentsByRegNos(regNos);
     const existingMap = new Map(existing.map(s => [s.registrationNumber.trim().toLowerCase(), s]));
 
     const toSave: (StudentData & { college?: string })[] = [];
