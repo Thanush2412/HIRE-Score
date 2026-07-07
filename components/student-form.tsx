@@ -1309,13 +1309,25 @@ function Step4Technical({
 
   const extractLeetCodeUsername = (val: string): string => {
     let clean = val.trim();
-    // Strip protocol, hostname, and common prefixes
+    if (!clean.includes("/") && !clean.includes("leetcode.com")) {
+      return clean;
+    }
     clean = clean.replace(/^(https?:\/\/)?(www\.)?leetcode\.com\/(u\/)?/i, "");
-    // Remove query params or hash fragments
     clean = clean.split(/[?#]/)[0];
-    // Remove trailing slashes
     clean = clean.replace(/\/+$/, "");
-    return clean;
+    
+    const parts = clean.split("/").filter(Boolean);
+    const firstPart = parts[0] || "";
+
+    const invalidUsernames = new Set([
+      "problems", "contest", "explore", "discuss", "tag", "api",
+      "support", "articles", "list", "u", "playground", "desktop"
+    ]);
+
+    if (invalidUsernames.has(firstPart.toLowerCase())) {
+      return "";
+    }
+    return firstPart;
   };
 
   const triggerFetchRank = async (urlOrUsername: string) => {

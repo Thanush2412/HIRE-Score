@@ -562,22 +562,56 @@ export function StudentsTab({ refresh, onImported }: { refresh?: number; onImpor
   };
 
   const [syncingLeetcode, setSyncingLeetcode] = useState(false);
+  const [leetcodeSyncProgress, setLeetcodeSyncProgress] = useState<{ updated: number; total: number } | null>(null);
 
   const handleSyncLeetcode = async () => {
+    const leetcodeStudents = students.filter(s => s.leetcodeUrl && s.leetcodeUrl.trim() !== "");
+    if (leetcodeStudents.length === 0) {
+      alert("No students with LeetCode URLs found to sync.");
+      return;
+    }
+
     setSyncingLeetcode(true);
+    setLeetcodeSyncProgress({ updated: 0, total: leetcodeStudents.length });
+
     try {
-      const res = await fetch("/api/leetcode-rank");
-      const data = await res.json();
-      if (data.updated > 0) {
+      const studentIds = leetcodeStudents.map(s => s.id);
+      const limit = 10;
+      let totalUpdated = 0;
+
+      for (let i = 0; i < studentIds.length; i += limit) {
+        const batchIds = studentIds.slice(i, i + limit);
+
+        setLeetcodeSyncProgress({
+          updated: i + batchIds.length,
+          total: studentIds.length
+        });
+
+        const res = await fetch("/api/leetcode-rank", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids: batchIds })
+        });
+
+        if (!res.ok) {
+          throw new Error("API error during sync");
+        }
+
+        const data = await res.json();
+        totalUpdated += data.updated || 0;
+
+        // Reload students to show progress in the table!
         const updatedStudents = await (await fetch("/api/students")).json();
         setStudents(updatedStudents);
       }
-      alert(data.message || "LeetCode ranks checked.");
+
+      alert(`Successfully checked and synced LeetCode ranks. Updated ${totalUpdated} profiles.`);
     } catch (e) {
       console.error(e);
       alert("Failed to sync LeetCode ranks.");
     } finally {
       setSyncingLeetcode(false);
+      setLeetcodeSyncProgress(null);
     }
   };
 
@@ -766,7 +800,9 @@ export function StudentsTab({ refresh, onImported }: { refresh?: number; onImpor
             disabled={syncingLeetcode}
           >
             <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${syncingLeetcode ? "animate-spin" : ""}`} />
-            {syncingLeetcode ? "Syncing LeetCode..." : "Sync LeetCode"}
+            {syncingLeetcode
+              ? `Syncing LeetCode (${leetcodeSyncProgress ? `${leetcodeSyncProgress.updated}/${leetcodeSyncProgress.total}` : "..."})`
+              : "Sync LeetCode"}
           </Button>
           <Button variant="outline" size="sm" className="h-8 text-xs" onClick={exportCSV} disabled={filtered.length === 0}>
             <Download className="h-3.5 w-3.5 mr-1.5" /> Export CSV
@@ -1049,6 +1085,17 @@ export function StudentsTab({ refresh, onImported }: { refresh?: number; onImpor
                           return (
                             <TableCell key={col.key} className="px-2 py-2 text-center cursor-pointer" onClick={() => router.push(`/students/${s.registrationNumber}`)}>
                               <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold ${cls}`}>{lvl}</span>
+                            </TableCell>
+                          );
+                        }
+                        if (col.key === "leetcodeRank") {
+                          const rankVal = Number(val);
+                          const displayRank = (!val || isNaN(rankVal) || rankVal <= 0 || rankVal >= 5000000)
+                            ? "Unranked"
+                            : rankVal.toLocaleString();
+                          return (
+                            <TableCell key={col.key} className="px-2 py-2 whitespace-nowrap text-muted-foreground cursor-pointer" onClick={() => router.push(`/students/${s.registrationNumber}`)}>
+                              {displayRank}
                             </TableCell>
                           );
                         }

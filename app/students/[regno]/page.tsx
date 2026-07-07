@@ -191,9 +191,18 @@ function TierCard({ tier, s }: { tier: typeof TIER_META[0]; s: StoredStudent }) 
               {tier.rows.map((row, i) => {
                 const raw = s[row.raw];
                 const scored = s[row.score] as number;
-                const displayVal = typeof raw === "string" && raw !== ""
-                  ? raw
-                  : scored === 0 ? "00" : scored;
+                
+                let displayVal = "";
+                if (row.raw === "leetcodeRank") {
+                  const rankVal = Number(raw);
+                  displayVal = (!raw || isNaN(rankVal) || rankVal <= 0 || rankVal >= 5000000)
+                    ? "Unranked"
+                    : rankVal.toLocaleString();
+                } else {
+                  displayVal = typeof raw === "string" && raw !== ""
+                    ? raw
+                    : scored === 0 ? "00" : String(scored);
+                }
                 return (
                   <tr key={i}>
                     <td style={{ fontSize: 12, fontWeight: 600, color: RED, padding: "3.5px 16px 3.5px 0", whiteSpace: "nowrap" }}>

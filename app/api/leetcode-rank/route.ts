@@ -1,14 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOutdatedLeetcodeStudents, updateStudentLeetcodeRank } from "@/lib/db";
+import { getOutdatedLeetcodeStudents, updateStudentLeetcodeRank, getPool } from "@/lib/db";
 
 export const dynamic = 'force-dynamic';
 
 function extractLeetCodeUsername(url: string): string {
   if (!url) return "";
   let clean = url.trim();
+
+  if (!clean.includes("/") && !clean.includes("leetcode.com")) {
+    return clean;
+  }
+
   clean = clean.replace(/^(https?:\/\/)?(www\.)?leetcode\.com\/(u\/)?/i, "");
+
+  const qIdx = clean.indexOf("?");
+  if (qIdx !== -1) clean = clean.substring(0, qIdx);
+  const hIdx = clean.indexOf("#");
+  if (hIdx !== -1) clean = clean.substring(0, hIdx);
+
   const parts = clean.split("/").filter(Boolean);
-  return parts[0] || "";
+  const firstPart = parts[0] || "";
+
+  const invalidUsernames = new Set([
+    "problems", "contest", "explore", "discuss", "tag", "api",
+    "support", "articles", "list", "u", "playground", "desktop"
+  ]);
+
+  if (invalidUsernames.has(firstPart.toLowerCase())) {
+    return "";
+  }
+
+  return firstPart;
 }
 
 async function fetchRank(username: string): Promise<number | null> {
@@ -44,9 +66,44 @@ async function fetchRank(username: string): Promise<number | null> {
 
 export async function POST(req: NextRequest) {
   try {
-    const { username } = await req.json();
+    const body = await req.json();
+
+    // Case 1: Batch force sync by student IDs
+    if (body.ids && Array.isArray(body.ids)) {
+      const ids = body.ids.filter(Boolean);
+      if (ids.length === 0) {
+        return NextResponse.json({ success: true, updated: 0 });
+      }
+
+      const pool = getPool();
+      const [rows] = await pool.query(
+        `SELECT s.id, t.leetcode_url FROM students s 
+         JOIN student_technical t ON s.id = t.student_id 
+         WHERE s.id IN (${ids.map(() => "?").join(",")})`,
+        ids
+      );
+
+      let updatedCount = 0;
+      for (const student of rows as any[]) {
+        const username = extractLeetCodeUsername(student.leetcode_url);
+        if (username) {
+          const rank = await fetchRank(username);
+          if (rank !== null) {
+            await updateStudentLeetcodeRank(student.id, rank);
+            updatedCount++;
+          }
+          // Small delay to prevent rate limit
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        }
+      }
+
+      return NextResponse.json({ success: true, updated: updatedCount });
+    }
+
+    // Case 2: Single student check by username
+    const { username } = body;
     if (!username || typeof username !== "string") {
-      return NextResponse.json({ error: "Username is required" }, { status: 400 });
+      return NextResponse.json({ error: "Username or IDs list is required" }, { status: 400 });
     }
     const ranking = await fetchRank(username);
     if (ranking === null) {
