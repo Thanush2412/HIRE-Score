@@ -83,9 +83,19 @@ export async function POST(req: NextRequest) {
         if (!SECONDARY_KEYS.has(fieldKey)) continue;
         const col = Number(colStr);
         if (col >= row.length) continue;
+
+        const val = row[col];
+        // Skip if cell is empty, null, or has non-numeric text indicating absence (like "Absent", "AB", "N/A")
+        if (val === null || val === undefined) continue;
+        const valStr = String(val).trim();
+        if (valStr === "" || (isNaN(Number(valStr)) && fieldKey !== "leetcodeRank")) {
+          // Skip updating this field to preserve previous database value
+          continue;
+        }
+
         patch[fieldKey] = fieldKey === "leetcodeRank"
-          ? parseRankNum(row[col])
-          : parseNum(row[col]);
+          ? parseRankNum(val)
+          : parseNum(val);
       }
       if (Object.keys(patch).length > 0) secMap.set(regNo, patch);
     }

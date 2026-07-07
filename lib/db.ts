@@ -494,37 +494,53 @@ export async function recalculateAllScores(): Promise<number> {
   if (students.length === 0) return 0;
 
   const pool = getPool();
-  const conn = await pool.getConnection();
-  await conn.beginTransaction();
+  
+  // Calculate computed scores for all students in JS
+  const computedList = students.map(student => ({
+    studentId: student.id,
+    scores: computeScores(student)
+  }));
 
+  // Build a single bulk INSERT ... ON DUPLICATE KEY UPDATE query
+  const columns = [
+    "student_id", "x_score", "xii_score", "ug_score", "academic_aggregate", "no_of_arrears_score",
+    "history_arrears_score", "standing_arrears", "quants_score", "logical_score", "verbal_score",
+    "aptitude_total", "cefr_grammar_score", "ef_listening_score", "ef_speaking_score", "ef_reading_score",
+    "ef_writing_score", "communication_total", "coding_practice", "coding_assessment", "codeathon_hackathon",
+    "mini_projects", "full_length_project_score", "global_cert_score", "other_cert_score", "academic_regulatory",
+    "cognitive_linguistic", "technical_proficiency", "industry_validation", "hire_score"
+  ];
+
+  const valuesPlaceholders = computedList.map(() => `(${columns.map(() => "?").join(",")})`).join(",");
+  
+  const updateClauses = columns
+    .filter(col => col !== "student_id")
+    .map(col => `\`${col}\` = VALUES(\`${col}\`)`)
+    .join(",");
+
+  const queryStr = `
+    INSERT INTO student_scores (${columns.map(c => `\`${c}\``).join(",")})
+    VALUES ${valuesPlaceholders}
+    ON DUPLICATE KEY UPDATE ${updateClauses}
+  `;
+
+  const flatParams: any[] = [];
+  for (const item of computedList) {
+    const c = item.scores;
+    flatParams.push(
+      item.studentId, c.xScore, c.xiiScore, c.ugScore, c.academicAggregate, c.noOfArrearsScore,
+      c.historyArrearsScore, c.standingArrears, c.quantsScore, c.logicalScore, c.verbalScore,
+      c.aptitudeTotal, c.cefrGrammarScore, c.efListeningScore, c.efSpeakingScore, c.efReadingScore,
+      c.efWritingScore, c.communicationTotal, c.codingPractice, c.codingAssessment, c.codeathonHackathon,
+      c.miniProjects, c.fullLengthProjectScore, c.globalCertScore, c.otherCertScore, c.academicRegulatory,
+      c.cognitiveLinguistic, c.technicalProficiency, c.industryValidation, c.hireScore
+    );
+  }
+
+  const conn = await pool.getConnection();
   try {
-    for (const student of students) {
-      const computed = computeScores(student);
-      await conn.query(
-        `UPDATE student_scores SET 
-          x_score = ?, xii_score = ?, ug_score = ?, academic_aggregate = ?, no_of_arrears_score = ?, 
-          history_arrears_score = ?, standing_arrears = ?, quants_score = ?, logical_score = ?, verbal_score = ?, 
-          aptitude_total = ?, cefr_grammar_score = ?, ef_listening_score = ?, ef_speaking_score = ?, ef_reading_score = ?, 
-          ef_writing_score = ?, communication_total = ?, coding_practice = ?, coding_assessment = ?, codeathon_hackathon = ?, 
-          mini_projects = ?, full_length_project_score = ?, global_cert_score = ?, other_cert_score = ?, academic_regulatory = ?, 
-          cognitive_linguistic = ?, technical_proficiency = ?, industry_validation = ?, hire_score = ? 
-         WHERE student_id = ?`,
-        [
-          computed.xScore, computed.xiiScore, computed.ugScore, computed.academicAggregate, computed.noOfArrearsScore,
-          computed.historyArrearsScore, computed.standingArrears, computed.quantsScore, computed.logicalScore, computed.verbalScore,
-          computed.aptitudeTotal, computed.cefrGrammarScore, computed.efListeningScore, computed.efSpeakingScore, computed.efReadingScore,
-          computed.efWritingScore, computed.communicationTotal, computed.codingPractice, computed.codingAssessment, computed.codeathonHackathon,
-          computed.miniProjects, computed.fullLengthProjectScore, computed.globalCertScore, computed.otherCertScore, computed.academicRegulatory,
-          computed.cognitiveLinguistic, computed.technicalProficiency, computed.industryValidation, computed.hireScore,
-          student.id
-        ]
-      );
-    }
-    await conn.commit();
+    await conn.query(queryStr, flatParams);
     return students.length;
-  } catch (err) {
-    await conn.rollback();
-    throw err;
   } finally {
     conn.release();
   }
