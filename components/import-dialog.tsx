@@ -162,7 +162,9 @@ export function ImportDialog({ open, onClose, onImported, mode }: {
       setProgress(100);
       if (!data.error) {
         onImported();
-        setTimeout(() => { onClose(); }, 1600);
+        if (mode === "primary") {
+          setTimeout(() => { onClose(); }, 1600);
+        }
       }
     } catch {
       setResult({ error: "Upload failed" });
@@ -374,7 +376,7 @@ export function ImportDialog({ open, onClose, onImported, mode }: {
                 ? <><XCircle className="h-4 w-4 shrink-0" /> {result.error}</>
                 : <><CheckCircle2 className="h-4 w-4 shrink-0" />
                     {mode === "secondary"
-                      ? `${result.matched ?? 0} matched & updated out of ${result.totalInFile ?? 0} in file${(result.unmatched ?? 0) > 0 ? ` · ${result.unmatched} not found` : ""}`
+                      ? `${result.updated ?? 0} updated · ${result.matched ?? 0} matched out of ${result.totalInFile ?? 0} in file${(result.unmatched ?? 0) > 0 ? ` · ${result.unmatched} not found` : ""}`
                       : `Imported ${result.imported ?? result.updated ?? 0} records successfully`
                     }
                   </>
