@@ -223,7 +223,8 @@ export async function getStudentsFiltered(opts: {
 }
 
 export async function upsertStudent(
-  input: StudentData & { college?: string }
+  input: StudentData & { college?: string },
+  actionType: string = "SYSTEM_UPSERT"
 ): Promise<StoredStudent> {
   const pool = getPool();
   const conn = await pool.getConnection();
@@ -391,6 +392,9 @@ export async function upsertStudent(
 
     await conn.commit();
 
+    // Log the submission automatically
+    await logSubmission(computed.registrationNumber, actionType, computed);
+
     const [resRows] = await conn.query("SELECT * FROM student_full_view WHERE id = ?", [studentId]);
     return fromRow((resRows as any[])[0]);
 
@@ -403,7 +407,8 @@ export async function upsertStudent(
 }
 
 export async function bulkUpsert(
-  records: (StudentData & { college?: string })[]
+  records: (StudentData & { college?: string })[],
+  actionType: string = "EXCEL_IMPORT"
 ): Promise<StoredStudent[]> {
   const results: StoredStudent[] = [];
   const BATCH = 50;
@@ -414,7 +419,7 @@ export async function bulkUpsert(
       ...record,
       importSequence: i + batchIndex + 1
     }));
-    const batchResults = await Promise.all(batchWithSequence.map((r) => upsertStudent(r)));
+    const batchResults = await Promise.all(batchWithSequence.map((r) => upsertStudent(r, actionType)));
     results.push(...batchResults);
   }
 
@@ -611,16 +616,17 @@ export async function logSubmission(
       `INSERT INTO student_submissions_log 
         (id, action_type, created_at, name, registration_number, department, year, phone, email, college, stream, degree_type, 
          x_marks, xii_marks, ug_percentage, pg_percentage, no_of_arrears, history_of_arrears, x_marksheet_url, xii_marksheet_url, 
-         ug_semester_marks, pg_semester_marks, ef_set_listening, ef_set_speaking, ef_set_reading, ef_set_writing, cert_urls, 
+         ug_semester_marks, pg_semester_marks, quants, logical, verbal, ef_set_listening, ef_set_speaking, ef_set_reading, ef_set_writing, cert_urls, 
          leetcode_rank, leetcode_url, github_url, fop_assessment, dsa_assessment, internal_codeathon, external_codeathon, 
          github_projects, full_length_projects, internal_codeathon_details, external_codeathon_details, full_length_project_details, 
          global_certification, other_certifications, global_cert_details, other_cert_details, cefr_grammar) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id, actionType, createdAt, payload.name, registrationNumber, payload.department, payload.year, payload.phone, payload.email,
         payload.college, payload.stream, payload.degreeType, payload.xMarks, payload.xiiMarks, payload.ugPercentage, payload.pgPercentage,
         payload.noOfArrears, payload.historyOfArrears, payload.xMarksheetUrl, payload.xiiMarksheetUrl,
         JSON.stringify(payload.ugSemesterMarks || []), JSON.stringify(payload.pgSemesterMarks || []),
+        payload.quants || 0, payload.logical || 0, payload.verbal || 0,
         payload.efSetListening, payload.efSetSpeaking, payload.efSetReading, payload.efSetWriting, JSON.stringify(payload.certUrls || {}),
         payload.leetcodeRank ? String(payload.leetcodeRank) : "", payload.leetcodeUrl, payload.githubUrl,
         payload.fopAssessment, payload.dsaAssessment, payload.internalCodeathon, payload.externalCodeathon,
@@ -670,4 +676,77 @@ export async function renameDepartmentInDb(collegeName: string, oldName: string,
     [newName, collegeId, oldName]
   );
   return (res as any).affectedRows || 0;
+}
+
+function fromLogRow(row: any): any {
+  if (!row) return null;
+  return {
+    id: row.id,
+    actionType: row.action_type,
+    createdAt: row.created_at,
+    registrationNumber: row.registration_number,
+    name: row.name,
+    department: row.department,
+    year: row.year,
+    phone: row.phone,
+    email: row.email,
+    college: row.college || "",
+    stream: row.stream,
+    degreeType: row.degree_type,
+    xMarks: Number(row.x_marks ?? 0),
+    xiiMarks: Number(row.xii_marks ?? 0),
+    ugPercentage: Number(row.ug_percentage ?? 0),
+    pgPercentage: row.pg_percentage !== null ? Number(row.pg_percentage) : null,
+    noOfArrears: Number(row.no_of_arrears ?? 0),
+    historyOfArrears: Number(row.history_of_arrears ?? 0),
+    quants: Number(row.quants ?? 0),
+    logical: Number(row.logical ?? 0),
+    verbal: Number(row.verbal ?? 0),
+    leetcodeRank: parseRankNum(row.leetcode_rank),
+    fopAssessment: Number(row.fop_assessment ?? 0),
+    dsaAssessment: Number(row.dsa_assessment ?? 0),
+    internalCodeathon: Number(row.internal_codeathon ?? 0),
+    externalCodeathon: Number(row.external_codeathon ?? 0),
+    githubProjects: Number(row.github_projects ?? 0),
+    fullLengthProjects: Number(row.full_length_projects ?? 0),
+    globalCertification: Number(row.global_certification ?? 0),
+    otherCertifications: Number(row.other_certifications ?? 0),
+    cefrGrammar: cleanCEFR(row.cefr_grammar),
+    efSetListening: cleanCEFR(row.ef_set_listening),
+    efSetSpeaking: cleanCEFR(row.ef_set_speaking),
+    efSetReading: cleanCEFR(row.ef_set_reading),
+    efSetWriting: cleanCEFR(row.ef_set_writing),
+    ugSemesterMarks: parseJSON(row.ug_semester_marks) || [],
+    pgSemesterMarks: parseJSON(row.pg_semester_marks) || [],
+    certUrls: parseJSON(row.cert_urls) || {},
+    internalCodeathonDetails: parseJSON(row.internal_codeathon_details) || [],
+    externalCodeathonDetails: parseJSON(row.external_codeathon_details) || [],
+    fullLengthProjectDetails: parseJSON(row.full_length_project_details) || [],
+    globalCertDetails: parseJSON(row.global_cert_details) || [],
+    otherCertDetails: parseJSON(row.other_cert_details) || [],
+  };
+}
+
+export async function getStudentHistory(regNo: string): Promise<any[]> {
+  const pool = getPool();
+  const [rows] = await pool.query(
+    "SELECT * FROM student_submissions_log WHERE registration_number = ? ORDER BY created_at ASC",
+    [regNo]
+  );
+  return (rows as any[]).map(row => {
+    const rawData = fromLogRow(row);
+    if (!rawData) return null;
+    const computed = computeScores(rawData);
+    return {
+      actionType: row.action_type,
+      createdAt: row.created_at,
+      hireScore: computed.hireScore,
+      academicRegulatory: computed.academicRegulatory,
+      cognitiveLinguistic: computed.cognitiveLinguistic,
+      technicalProficiency: computed.technicalProficiency,
+      industryValidation: computed.industryValidation,
+      raw: rawData,
+      computed: computed
+    };
+  }).filter(Boolean);
 }

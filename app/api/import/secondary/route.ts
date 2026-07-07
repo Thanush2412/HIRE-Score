@@ -108,7 +108,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const saved = toSave.length > 0 ? await bulkUpsert(toSave) : [];
+    const saved = toSave.length > 0 ? await bulkUpsert(toSave, "SECONDARY_IMPORT") : [];
 
     return NextResponse.json({
       updated: saved.length,

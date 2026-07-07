@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAllStudents, getStudentsFiltered, upsertStudent, bulkUpsert, deleteStudentById, deleteByRange, logSubmission } from "@/lib/db";
+import { getAllStudents, getStudentsFiltered, upsertStudent, bulkUpsert, deleteStudentById, deleteByRange } from "@/lib/db";
 import { StudentData } from "@/lib/types";
 
 export const dynamic = 'force-dynamic';
@@ -39,14 +39,7 @@ export async function POST(req: NextRequest) {
       s => s.registrationNumber === (body.registrationNumber ?? "").trim()
     );
     
-    // Log the raw submission to the audit table
-    await logSubmission(
-      body.registrationNumber ?? "unknown",
-      existing ? "API_UPDATE" : "API_CREATE",
-      body
-    );
-
-    const student = await upsertStudent(body);
+    const student = await upsertStudent(body, existing ? "API_UPDATE" : "API_CREATE");
     return NextResponse.json(student, { status: existing ? 200 : 201 });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 400 });

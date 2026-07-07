@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { StoredStudent } from "@/lib/db";
-import { Download, Loader2 } from "lucide-react";
+import { Download, Loader2, TrendingUp, X, Activity, Calendar } from "lucide-react";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const TOTAL_MAX = 1000;
@@ -223,6 +223,16 @@ export default function StudentDetailPage() {
   const [loading, setLoading] = useState(true);
   const [exportingPage, setExportingPage] = useState(false);
 
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [history, setHistory] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [expandedLogIndex, setExpandedLogIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    setIsAdmin(sessionStorage.getItem("hire_auth") === "1");
+  }, []);
+
   useEffect(() => {
     fetch("/api/students")
       .then(r => r.json())
@@ -232,6 +242,26 @@ export default function StudentDetailPage() {
       })
       .finally(() => setLoading(false));
   }, [params.regno]);
+
+  const fetchHistory = async () => {
+    if (history.length > 0) {
+      setShowHistoryModal(true);
+      return;
+    }
+    setLoadingHistory(true);
+    try {
+      const res = await fetch(`/api/students/history?regNo=${encodeURIComponent(String(params.regno))}`);
+      if (res.ok) {
+        const data = await res.json();
+        setHistory(data);
+        setShowHistoryModal(true);
+      }
+    } catch (e) {
+      console.error("Failed to load history:", e);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
 
   const handleExportPage = async () => {
     if (!student) return;
@@ -291,12 +321,22 @@ export default function StudentDetailPage() {
         <div className="cursor-pointer" onClick={() => router.push("/")}>
           <img src="/logo.png" alt="HIRE Logo" className="h-8 w-auto dark:bg-white dark:rounded dark:p-0.5" />
         </div>
-        <button onClick={handleExportPage} disabled={exportingPage}
-          className="flex items-center gap-2 text-xs border rounded-lg px-3 py-1.5 transition-colors disabled:opacity-60"
-          style={{ color: RED, borderColor: `${RED}55`, background: `${RED}0d` }}>
-          {exportingPage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-          {exportingPage ? "Generating…" : "Export PDF"}
-        </button>
+        <div className="flex items-center gap-2">
+          {isAdmin && (
+            <button onClick={fetchHistory} disabled={loadingHistory}
+              className="flex items-center gap-2 text-xs border rounded-lg px-3 py-1.5 transition-colors disabled:opacity-60 font-medium"
+              style={{ color: "#3b82f6", borderColor: `#3b82f655`, background: `#3b82f60d` }}>
+              {loadingHistory ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <TrendingUp className="h-3.5 w-3.5" />}
+              See Progress
+            </button>
+          )}
+          <button onClick={handleExportPage} disabled={exportingPage}
+            className="flex items-center gap-2 text-xs border rounded-lg px-3 py-1.5 transition-colors disabled:opacity-60"
+            style={{ color: RED, borderColor: `${RED}55`, background: `${RED}0d` }}>
+            {exportingPage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            {exportingPage ? "Generating…" : "Export PDF"}
+          </button>
+        </div>
       </div>
 
       <div className="max-w-4xl mx-auto px-4 py-5 space-y-3">
@@ -599,6 +639,337 @@ export default function StudentDetailPage() {
         </div>
 
       </div>
+
+      {showHistoryModal && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          backgroundColor: "rgba(0,0,0,0.5)",
+          backdropFilter: "blur(4px)",
+          zIndex: 1000,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 16,
+        }}>
+          <div style={{
+            backgroundColor: "#fff",
+            borderRadius: 20,
+            width: "100%",
+            maxWidth: 700,
+            maxHeight: "85vh",
+            display: "flex",
+            flexDirection: "column",
+            boxShadow: "0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)",
+            overflow: "hidden",
+          }}>
+            {/* Header */}
+            <div style={{
+              padding: "20px 24px",
+              borderBottom: "1px solid #e5e7eb",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}>
+              <div>
+                <h3 style={{ fontSize: 18, fontWeight: 800, color: "#111827", margin: 0 }}>
+                  Candidate Progress & Score History
+                </h3>
+                <p style={{ fontSize: 12, color: "#6b7280", margin: "2px 0 0 0" }}>
+                  Tracking updates and performance changes over time for {s.name} ({s.registrationNumber})
+                </p>
+              </div>
+              <button
+                onClick={() => setShowHistoryModal(false)}
+                style={{
+                  padding: 6,
+                  borderRadius: "50%",
+                  border: "none",
+                  background: "#f3f4f6",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#374151",
+                }}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div style={{
+              padding: 24,
+              overflowY: "auto",
+              flex: 1,
+            }}>
+              {history.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "40px 20px", color: "#6b7280" }}>
+                  <Activity style={{ height: 40, width: 40, margin: "0 auto 12px auto", opacity: 0.5 }} />
+                  <p style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>No history logs found</p>
+                  <p style={{ margin: "4px 0 0 0", fontSize: 12 }}>Updates will appear here as they are imported or edited.</p>
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+                  {/* Score Chart Representation */}
+                  <div style={{
+                    background: "linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%)",
+                    borderRadius: 16,
+                    padding: 18,
+                    border: "1px solid #e5e7eb",
+                  }}>
+                    <p style={{ fontSize: 12, fontWeight: 700, color: "#374151", margin: "0 0 16px 0" }}>
+                      HIRE Score Progression Timeline
+                    </p>
+                    <div style={{
+                      display: "flex",
+                      alignItems: "flex-end",
+                      justifyContent: "space-between",
+                      height: 120,
+                      padding: "0 10px 10px 10px",
+                      borderBottom: "2px solid #d1d5db",
+                      position: "relative",
+                      gap: 12,
+                    }}>
+                      {history.map((h, i) => {
+                        const scoreHeight = (h.hireScore / TOTAL_MAX) * 100;
+                        return (
+                          <div key={i} style={{
+                            flex: 1,
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            position: "relative",
+                          }}>
+                            {/* Score Tooltip/Label */}
+                            <span style={{
+                              fontSize: 10,
+                              fontWeight: 800,
+                              color: RED,
+                              marginBottom: 4,
+                              lineHeight: 1,
+                            }}>
+                              {h.hireScore}
+                            </span>
+                            {/* Bar */}
+                            <div style={{
+                              width: 24,
+                              height: `${Math.max(scoreHeight, 8)}%`,
+                              background: i === history.length - 1 ? RED : "linear-gradient(180deg, #9ca3af 0%, #4b5563 100%)",
+                              borderRadius: "6px 6px 0 0",
+                              transition: "height 0.3s ease",
+                              cursor: "pointer",
+                            }} title={`Score: ${h.hireScore}`} />
+                            {/* Index Indicator */}
+                            <span style={{
+                              position: "absolute",
+                              bottom: -22,
+                              fontSize: 9,
+                              fontWeight: 700,
+                              color: "#6b7280",
+                            }}>
+                              #{i + 1}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div style={{ marginTop: 28, display: "flex", justifyContent: "space-between", fontSize: 10, color: "#6b7280" }}>
+                      <span>First Log</span>
+                      <span>Latest Active State</span>
+                    </div>
+                  </div>
+
+                  {/* Log Timeline List */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    <p style={{ fontSize: 12, fontWeight: 700, color: "#374151", margin: "0 0 4px 0" }}>
+                      Detailed Event Logs (Click cards to expand details)
+                    </p>
+                    {history.map((h, i) => {
+                      const dateStr = new Date(h.createdAt).toLocaleDateString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      });
+                      const isLatest = i === history.length - 1;
+                      const isExpanded = expandedLogIndex === i;
+                      return (
+                        <div key={i} 
+                          onClick={() => setExpandedLogIndex(isExpanded ? null : i)}
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            padding: 14,
+                            border: "1px solid #e5e7eb",
+                            borderRadius: 12,
+                            background: isLatest ? "#fef2f2" : "#fff",
+                            borderColor: isLatest ? "#fecaca" : "#e5e7eb",
+                            cursor: "pointer",
+                            boxShadow: isExpanded ? "0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03)" : "none",
+                            transition: "all 0.15s ease",
+                          }}
+                        >
+                          <div style={{ display: "flex", gap: 16 }}>
+                            {/* Left: Score Badge */}
+                            <div style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              minWidth: 60,
+                              height: 52,
+                              background: isLatest ? RED : "#f3f4f6",
+                              color: isLatest ? "#fff" : "#1f2937",
+                              borderRadius: 10,
+                              padding: "4px 8px",
+                              flexShrink: 0,
+                            }}>
+                              <span style={{ fontSize: 16, fontWeight: 900 }}>{h.hireScore}</span>
+                              <span style={{ fontSize: 8, opacity: 0.8, textTransform: "uppercase", fontWeight: 700 }}>Score</span>
+                            </div>
+
+                            {/* Right: Info */}
+                            <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                              <div style={{ display: "flex", alignItems: "center", justifyItems: "center", justifyContent: "space-between" }}>
+                                <span style={{
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  color: isLatest ? RED : "#374151",
+                                  background: isLatest ? "#ffe4e6" : "#e5e7eb",
+                                  padding: "2px 8px",
+                                  borderRadius: 4,
+                                }}>
+                                  {h.actionType}
+                                </span>
+                                <span style={{ fontSize: 10, color: "#6b7280", display: "flex", alignItems: "center", gap: 4 }}>
+                                  <Calendar className="h-3 w-3" />
+                                  {dateStr}
+                                </span>
+                              </div>
+                              {/* Sub scores details */}
+                              <div style={{
+                                display: "flex",
+                                gap: 12,
+                                marginTop: 8,
+                                fontSize: 10,
+                                color: "#4b5563",
+                                borderTop: "1px dashed #e5e7eb",
+                                paddingTop: 6,
+                              }}>
+                                <span>Acad: <b>{h.academicRegulatory}</b></span>
+                                <span>Apt: <b>{h.computed.aptitudeTotal}</b></span>
+                                <span>Comm: <b>{h.computed.communicationTotal}</b></span>
+                                <span>Tech: <b>{h.technicalProficiency}</b></span>
+                                <span>Ind: <b>{h.industryValidation}</b></span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Expanded Details */}
+                          {isExpanded && (
+                            <div style={{
+                              marginTop: 12,
+                              paddingTop: 12,
+                              borderTop: "1px solid #e5e7eb",
+                              display: "grid",
+                              gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+                              gap: 12,
+                            }} onClick={(e) => e.stopPropagation()}>
+                              {/* Tier 1 */}
+                              <div style={{ background: "#f9fafb", padding: 8, borderRadius: 8, border: "1px solid #f3f4f6" }}>
+                                <p style={{ fontSize: 9, fontWeight: 800, color: "#4b5563", textTransform: "uppercase", marginBottom: 6 }}>Acad & Reg ({h.academicRegulatory})</p>
+                                <div style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: 10, color: "#1f2937" }}>
+                                  <div style={{ display: "flex", justifyContent: "space-between" }}><span>X Marks:</span><b>{h.raw.xMarks}%</b></div>
+                                  <div style={{ display: "flex", justifyContent: "space-between" }}><span>XII Marks:</span><b>{h.raw.xiiMarks}%</b></div>
+                                  <div style={{ display: "flex", justifyContent: "space-between" }}><span>UG %:</span><b>{h.raw.ugPercentage}%</b></div>
+                                  {h.raw.pgPercentage !== null && (
+                                    <div style={{ display: "flex", justifyContent: "space-between" }}><span>PG %:</span><b>{h.raw.pgPercentage}%</b></div>
+                                  )}
+                                  <div style={{ display: "flex", justifyContent: "space-between" }}><span>Arrears:</span><b>{h.raw.noOfArrears}</b></div>
+                                </div>
+                              </div>
+
+                              {/* Tier 2 Aptitude */}
+                              <div style={{ background: "#f9fafb", padding: 8, borderRadius: 8, border: "1px solid #f3f4f6" }}>
+                                <p style={{ fontSize: 9, fontWeight: 800, color: "#4b5563", textTransform: "uppercase", marginBottom: 6 }}>Aptitude ({h.computed.aptitudeTotal})</p>
+                                <div style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: 10, color: "#1f2937" }}>
+                                  <div style={{ display: "flex", justifyContent: "space-between" }}><span>Quants:</span><b>{h.raw.quants}</b></div>
+                                  <div style={{ display: "flex", justifyContent: "space-between" }}><span>Logical:</span><b>{h.raw.logical}</b></div>
+                                  <div style={{ display: "flex", justifyContent: "space-between" }}><span>Verbal:</span><b>{h.raw.verbal}</b></div>
+                                </div>
+                              </div>
+
+                              {/* Tier 2 Communication */}
+                              <div style={{ background: "#f9fafb", padding: 8, borderRadius: 8, border: "1px solid #f3f4f6" }}>
+                                <p style={{ fontSize: 9, fontWeight: 800, color: "#4b5563", textTransform: "uppercase", marginBottom: 6 }}>Communication ({h.computed.communicationTotal})</p>
+                                <div style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: 10, color: "#1f2937" }}>
+                                  <div style={{ display: "flex", justifyContent: "space-between" }}><span>CEFR:</span><b>{h.raw.cefrGrammar || "N/A"}</b></div>
+                                  <div style={{ display: "flex", justifyContent: "space-between" }}><span>Listening:</span><b>{h.raw.efSetListening || "N/A"}</b></div>
+                                  <div style={{ display: "flex", justifyContent: "space-between" }}><span>Speaking:</span><b>{h.raw.efSetSpeaking || "N/A"}</b></div>
+                                  <div style={{ display: "flex", justifyContent: "space-between" }}><span>Reading:</span><b>{h.raw.efSetReading || "N/A"}</b></div>
+                                  <div style={{ display: "flex", justifyContent: "space-between" }}><span>Writing:</span><b>{h.raw.efSetWriting || "N/A"}</b></div>
+                                </div>
+                              </div>
+
+                              {/* Tier 3 Technical */}
+                              <div style={{ background: "#f9fafb", padding: 8, borderRadius: 8, border: "1px solid #f3f4f6" }}>
+                                <p style={{ fontSize: 9, fontWeight: 800, color: "#4b5563", textTransform: "uppercase", marginBottom: 6 }}>Technical ({h.technicalProficiency})</p>
+                                <div style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: 10, color: "#1f2937" }}>
+                                  <div style={{ display: "flex", justifyContent: "space-between" }}><span>LeetCode:</span><b>{h.raw.leetcodeRank || "N/A"}</b></div>
+                                  <div style={{ display: "flex", justifyContent: "space-between" }}><span>FOP Score:</span><b>{h.raw.fopAssessment}</b></div>
+                                  <div style={{ display: "flex", justifyContent: "space-between" }}><span>DSA Score:</span><b>{h.raw.dsaAssessment}</b></div>
+                                  <div style={{ display: "flex", justifyContent: "space-between" }}><span>Codeathons:</span><b>{h.raw.internalCodeathon + h.raw.externalCodeathon}</b></div>
+                                  <div style={{ display: "flex", justifyContent: "space-between" }}><span>Proj (GH/FL):</span><b>{h.raw.githubProjects}/{h.raw.fullLengthProjects}</b></div>
+                                </div>
+                              </div>
+
+                              {/* Tier 4 Industry */}
+                              <div style={{ background: "#f9fafb", padding: 8, borderRadius: 8, border: "1px solid #f3f4f6" }}>
+                                <p style={{ fontSize: 9, fontWeight: 800, color: "#4b5563", textTransform: "uppercase", marginBottom: 6 }}>Industry ({h.industryValidation})</p>
+                                <div style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: 10, color: "#1f2937" }}>
+                                  <div style={{ display: "flex", justifyContent: "space-between" }}><span>Global Certs:</span><b>{h.raw.globalCertification}</b></div>
+                                  <div style={{ display: "flex", justifyContent: "space-between" }}><span>Other Certs:</span><b>{h.raw.otherCertifications}</b></div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div style={{
+              padding: "16px 24px",
+              borderTop: "1px solid #e5e7eb",
+              backgroundColor: "#f9fafb",
+              display: "flex",
+              justifyContent: "flex-end",
+            }}>
+              <button
+                onClick={() => setShowHistoryModal(false)}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  backgroundColor: "#fff",
+                  cursor: "pointer",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: "#374151",
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
