@@ -34,6 +34,7 @@ export interface StudentData {
   // Tier 3 – Technical raw
   leetcodeRank: number;
   leetcodeUrl: string;
+  leetcodeUpdatedAt?: string;
   githubUrl: string;
   fopAssessment: number;
   dsaAssessment: number;

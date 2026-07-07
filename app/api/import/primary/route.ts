@@ -145,7 +145,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Both bulkUpsert and upsertCollegesFromImport are now async
-    const saved = await bulkUpsert(records as (StudentData & { college?: string })[], "PRIMARY_IMPORT");
+    const saved = await bulkUpsert(records as (StudentData & { college?: string })[], "PRIMARY_IMPORT", true);
 
     await upsertCollegesFromImport(records.map(r => {
       const rec = r as unknown as Record<string, unknown>;

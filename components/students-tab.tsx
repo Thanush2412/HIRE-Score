@@ -561,10 +561,36 @@ export function StudentsTab({ refresh, onImported }: { refresh?: number; onImpor
     URL.revokeObjectURL(url);
   };
 
+  const [syncingLeetcode, setSyncingLeetcode] = useState(false);
+
+  const handleSyncLeetcode = async () => {
+    setSyncingLeetcode(true);
+    try {
+      const res = await fetch("/api/leetcode-rank");
+      const data = await res.json();
+      if (data.updated > 0) {
+        const updatedStudents = await (await fetch("/api/students")).json();
+        setStudents(updatedStudents);
+      }
+      alert(data.message || "LeetCode ranks checked.");
+    } catch (e) {
+      console.error(e);
+      alert("Failed to sync LeetCode ranks.");
+    } finally {
+      setSyncingLeetcode(false);
+    }
+  };
+
   const fetchStudents = async () => {
     setLoading(true);
-    try { setStudents(await (await fetch("/api/students")).json()); }
-    finally { setLoading(false); }
+    try {
+      const data = await (await fetch("/api/students")).json();
+      setStudents(data);
+      // Trigger background LeetCode sync on load (once a day check)
+      fetch("/api/leetcode-rank").catch(() => {});
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { fetchStudents(); }, [refresh]);
@@ -731,6 +757,16 @@ export function StudentsTab({ refresh, onImported }: { refresh?: number; onImpor
           )}
           <Button variant="outline" size="sm" className="h-8 text-xs" onClick={fetchStudents}>
             <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Refresh
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs"
+            onClick={handleSyncLeetcode}
+            disabled={syncingLeetcode}
+          >
+            <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${syncingLeetcode ? "animate-spin" : ""}`} />
+            {syncingLeetcode ? "Syncing LeetCode..." : "Sync LeetCode"}
           </Button>
           <Button variant="outline" size="sm" className="h-8 text-xs" onClick={exportCSV} disabled={filtered.length === 0}>
             <Download className="h-3.5 w-3.5 mr-1.5" /> Export CSV

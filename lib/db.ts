@@ -111,6 +111,7 @@ function fromRow(row: any): StoredStudent {
     logical: Number(row.logical ?? 0),
     verbal: Number(row.verbal ?? 0),
     leetcodeRank: parseRankNum(row.leetcodeRank),
+    leetcodeUpdatedAt: row.leetcodeUpdatedAt ? (row.leetcodeUpdatedAt instanceof Date ? row.leetcodeUpdatedAt.toISOString().slice(0, 10) : String(row.leetcodeUpdatedAt).slice(0, 10)) : undefined,
     fopAssessment: Number(row.fopAssessment ?? 0),
     dsaAssessment: Number(row.dsaAssessment ?? 0),
     internalCodeathon: Number(row.internalCodeathon ?? 0),
@@ -224,7 +225,8 @@ export async function getStudentsFiltered(opts: {
 
 export async function upsertStudent(
   input: StudentData & { college?: string },
-  actionType: string = "SYSTEM_UPSERT"
+  actionType: string = "SYSTEM_UPSERT",
+  skipReturn = false
 ): Promise<StoredStudent> {
   const pool = getPool();
   const conn = await pool.getConnection();
@@ -236,39 +238,64 @@ export async function upsertStudent(
     const stream = input.stream || "engineering";
     const degreeType = input.degreeType || "ug";
 
-    // 1. Upsert College
-    let collegeId = crypto.randomUUID();
-    const [colRows] = await conn.query("SELECT id FROM colleges WHERE name = ?", [collegeName]);
-    if (Array.isArray(colRows) && colRows.length > 0) {
-      collegeId = (colRows[0] as any).id;
-      await conn.query(
-        "UPDATE colleges SET stream = ?, degree_type = ? WHERE id = ?",
-        [stream, degreeType, collegeId]
-      );
-    } else {
-      await conn.query(
-        "INSERT INTO colleges (id, name, stream, degree_type) VALUES (?, ?, ?, ?)",
-        [collegeId, collegeName, stream, degreeType]
-      );
+    let studentId = (computed as any).id || crypto.randomUUID();
+    let collegeId = null;
+    let departmentId = null;
+    let isExisting = false;
+
+    // Check if student exists
+    const [stuRows] = await conn.query(
+      "SELECT id, college_id, department_id FROM students WHERE registration_number = ?",
+      [computed.registrationNumber]
+    );
+    if (Array.isArray(stuRows) && stuRows.length > 0) {
+      studentId = (stuRows[0] as any).id;
+      collegeId = (stuRows[0] as any).college_id;
+      departmentId = (stuRows[0] as any).department_id;
+      isExisting = true;
     }
 
-    // 2. Upsert Department
-    let departmentId = crypto.randomUUID();
-    const [deptRows] = await conn.query("SELECT id FROM departments WHERE college_id = ? AND name = ?", [collegeId, computed.department]);
-    if (Array.isArray(deptRows) && deptRows.length > 0) {
-      departmentId = (deptRows[0] as any).id;
-    } else {
-      await conn.query(
-        "INSERT INTO departments (id, college_id, name) VALUES (?, ?, ?)",
-        [departmentId, collegeId, computed.department]
-      );
+    // Skip college and department upsert entirely for SECONDARY_IMPORT
+    if (!isExisting || actionType !== "SECONDARY_IMPORT") {
+      // 1. Upsert College
+      let activeCollegeId = collegeId;
+      if (!isExisting || !activeCollegeId) {
+        activeCollegeId = crypto.randomUUID();
+        const [colRows] = await conn.query("SELECT id FROM colleges WHERE name = ?", [collegeName]);
+        if (Array.isArray(colRows) && colRows.length > 0) {
+          activeCollegeId = (colRows[0] as any).id;
+          await conn.query(
+            "UPDATE colleges SET stream = ?, degree_type = ? WHERE id = ?",
+            [stream, degreeType, activeCollegeId]
+          );
+        } else {
+          await conn.query(
+            "INSERT INTO colleges (id, name, stream, degree_type) VALUES (?, ?, ?, ?)",
+            [activeCollegeId, collegeName, stream, degreeType]
+          );
+        }
+      }
+      collegeId = activeCollegeId;
+
+      // 2. Upsert Department
+      let activeDeptId = departmentId;
+      if (!isExisting || !activeDeptId) {
+        activeDeptId = crypto.randomUUID();
+        const [deptRows] = await conn.query("SELECT id FROM departments WHERE college_id = ? AND name = ?", [collegeId, computed.department]);
+        if (Array.isArray(deptRows) && deptRows.length > 0) {
+          activeDeptId = (deptRows[0] as any).id;
+        } else {
+          await conn.query(
+            "INSERT INTO departments (id, college_id, name) VALUES (?, ?, ?)",
+            [activeDeptId, collegeId, computed.department]
+          );
+        }
+      }
+      departmentId = activeDeptId;
     }
 
     // 3. Upsert Student Identity
-    let studentId = (computed as any).id || crypto.randomUUID();
-    const [stuRows] = await conn.query("SELECT id FROM students WHERE registration_number = ?", [computed.registrationNumber]);
-    if (Array.isArray(stuRows) && stuRows.length > 0) {
-      studentId = (stuRows[0] as any).id;
+    if (isExisting) {
       await conn.query(
         `UPDATE students SET 
           name = ?, email = ?, phone = ?, college_id = ?, department_id = ?, 
@@ -395,6 +422,10 @@ export async function upsertStudent(
     // Log the submission automatically
     await logSubmission(computed.registrationNumber, actionType, computed);
 
+    if (skipReturn) {
+      return null as any;
+    }
+
     const [resRows] = await conn.query("SELECT * FROM student_full_view WHERE id = ?", [studentId]);
     return fromRow((resRows as any[])[0]);
 
@@ -408,7 +439,8 @@ export async function upsertStudent(
 
 export async function bulkUpsert(
   records: (StudentData & { college?: string })[],
-  actionType: string = "EXCEL_IMPORT"
+  actionType: string = "EXCEL_IMPORT",
+  skipReturn = false
 ): Promise<StoredStudent[]> {
   const results: StoredStudent[] = [];
   const BATCH = 50;
@@ -419,10 +451,15 @@ export async function bulkUpsert(
       ...record,
       importSequence: i + batchIndex + 1
     }));
-    const batchResults = await Promise.all(batchWithSequence.map((r) => upsertStudent(r, actionType)));
-    results.push(...batchResults);
+    const batchResults = await Promise.all(batchWithSequence.map((r) => upsertStudent(r, actionType, skipReturn)));
+    if (!skipReturn) {
+      results.push(...(batchResults.filter(Boolean) as StoredStudent[]));
+    }
   }
 
+  if (skipReturn) {
+    return new Array(records.length).fill(null) as any;
+  }
   return results;
 }
 
@@ -749,4 +786,75 @@ export async function getStudentHistory(regNo: string): Promise<any[]> {
       computed: computed
     };
   }).filter(Boolean);
+}
+
+export async function getOutdatedLeetcodeStudents(): Promise<{ id: string; leetcodeUrl: string }[]> {
+  const pool = getPool();
+  const today = new Date().toISOString().slice(0, 10);
+  const [rows] = await pool.query(
+    `SELECT s.id, t.leetcode_url 
+     FROM students s
+     JOIN student_technical t ON s.id = t.student_id
+     WHERE t.leetcode_url IS NOT NULL 
+       AND t.leetcode_url != '' 
+       AND (t.leetcode_updated_at IS NULL OR t.leetcode_updated_at < ?)`,
+    [today]
+  );
+  return rows as { id: string; leetcodeUrl: string }[];
+}
+
+export async function updateStudentLeetcodeRank(
+  studentId: string,
+  rank: number
+): Promise<void> {
+  const pool = getPool();
+  const conn = await pool.getConnection();
+  await conn.beginTransaction();
+
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    
+    // Update student_technical table
+    await conn.query(
+      `UPDATE student_technical 
+       SET leetcode_rank = ?, leetcode_updated_at = ? 
+       WHERE student_id = ?`,
+      [rank, today, studentId]
+    );
+
+    // Load full student to compute and update scores
+    const [resRows] = await conn.query("SELECT * FROM student_full_view WHERE id = ?", [studentId]);
+    if (Array.isArray(resRows) && resRows.length > 0) {
+      const student = fromRow(resRows[0]);
+      const computed = computeScores(student);
+      
+      await conn.query(
+        `UPDATE student_scores SET 
+          x_score = ?, xii_score = ?, ug_score = ?, academic_aggregate = ?, no_of_arrears_score = ?, 
+          history_arrears_score = ?, standing_arrears = ?, quants_score = ?, logical_score = ?, verbal_score = ?, 
+          aptitude_total = ?, cefr_grammar_score = ?, ef_listening_score = ?, ef_speaking_score = ?, ef_reading_score = ?, 
+          ef_writing_score = ?, communication_total = ?, coding_practice = ?, coding_assessment = ?, codeathon_hackathon = ?, 
+          mini_projects = ?, full_length_project_score = ?, global_cert_score = ?, other_cert_score = ?, academic_regulatory = ?, 
+          cognitive_linguistic = ?, technical_proficiency = ?, industry_validation = ?, hire_score = ? 
+         WHERE student_id = ?`,
+        [
+          computed.xScore, computed.xiiScore, computed.ugScore, computed.academicAggregate, computed.noOfArrearsScore,
+          computed.historyArrearsScore, computed.standingArrears, computed.quantsScore, computed.logicalScore, computed.verbalScore,
+          computed.aptitudeTotal, computed.cefrGrammarScore, computed.efListeningScore, computed.efSpeakingScore, computed.efReadingScore,
+          computed.efWritingScore, computed.communicationTotal, computed.codingPractice, computed.codingAssessment, computed.codeathonHackathon,
+          computed.miniProjects, computed.fullLengthProjectScore, computed.globalCertScore, computed.otherCertScore,
+          computed.academicRegulatory, computed.cognitiveLinguistic, computed.technicalProficiency,
+          computed.industryValidation, computed.hireScore,
+          studentId
+        ]
+      );
+    }
+
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
 }
