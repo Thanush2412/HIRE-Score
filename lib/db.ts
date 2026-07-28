@@ -185,6 +185,19 @@ export async function getStudentById(id: string): Promise<StoredStudent | null> 
   return null;
 }
 
+export async function getStudentByRegistrationNumber(registrationNumber: string): Promise<StoredStudent | null> {
+  const pool = getPool();
+  const [rows] = await pool.query(
+    "SELECT * FROM student_full_view WHERE LOWER(TRIM(registrationNumber)) = LOWER(TRIM(?))",
+    [registrationNumber]
+  );
+  if (Array.isArray(rows) && rows.length > 0) {
+    return fromRow(rows[0]);
+  }
+  return null;
+}
+
+
 export async function getStudentsFiltered(opts: {
   colleges?: string[];
   college?: string;
