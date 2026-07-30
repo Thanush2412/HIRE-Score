@@ -3,25 +3,99 @@ import { getStudentByRegistrationNumber } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
+// Assessment component denominators
+const MAX_DENOMINATORS = {
+  fopAssessment: 75,
+  dsaAssessment: 100,
+  quants: 50,
+  verbal: 50,
+  logical: 50,
+  aptitudeTotal: 150,
+} as const;
+
+/**
+ * Normalizes raw input value against max denominator:
+ * - If raw > max: treats raw as percentage (0-100), converts to score out of max.
+ * - If raw <= max: treats raw as score out of max, calculates percentage.
+ */
+function normalizeComponentScore(val: unknown, max: number) {
+  const raw = Math.max(0, Number(val) || 0);
+  let scoreOutOfMax: number;
+  let percentage: number;
+
+  if (raw > max) {
+    // Value provided as percentage (e.g. 80% for FOP)
+    percentage = Math.min(raw, 100);
+    scoreOutOfMax = Math.round(((percentage / 100) * max) * 100) / 100;
+  } else {
+    // Value provided as raw score out of max denominator (e.g. 60 out of 75)
+    scoreOutOfMax = Math.min(raw, max);
+    percentage = max > 0 ? Math.round(((scoreOutOfMax / max) * 100) * 100) / 100 : 0;
+  }
+
+  return {
+    score: scoreOutOfMax,
+    maxDenominator: max,
+    percentage: percentage,
+    displayScore: `${scoreOutOfMax}/${max}`,
+    displayPercentage: `${percentage}%`,
+  };
+}
+
 function formatScoresResponse(student: any) {
+  const fop = normalizeComponentScore(student.fopAssessment, MAX_DENOMINATORS.fopAssessment);
+  const dsa = normalizeComponentScore(student.dsaAssessment, MAX_DENOMINATORS.dsaAssessment);
+  const quants = normalizeComponentScore(student.quants, MAX_DENOMINATORS.quants);
+  const verbal = normalizeComponentScore(student.verbal, MAX_DENOMINATORS.verbal);
+  const logical = normalizeComponentScore(student.logical, MAX_DENOMINATORS.logical);
+
+  const aptRawTotal = student.aptitudeTotal ?? (quants.score + verbal.score + logical.score);
+  const aptitudeTotal = normalizeComponentScore(aptRawTotal, MAX_DENOMINATORS.aptitudeTotal);
+
   return {
     registrationNumber: student.registrationNumber,
     name: student.name,
     college: student.college || null,
     department: student.department || null,
     year: student.year || null,
+
+    // Scores normalized to their respective max denominators (e.g. FOP out of 75)
     scores: {
-      fopAssessment: student.fopAssessment ?? 0,
-      dsaAssessment: student.dsaAssessment ?? 0,
-      quants: student.quants ?? 0,
-      verbal: student.verbal ?? 0,
-      logical: student.logical ?? 0,
+      fopAssessment: fop.score,
+      dsaAssessment: dsa.score,
+      quants: quants.score,
+      verbal: verbal.score,
+      logical: logical.score,
     },
+
+    // Percentage equivalent (0 - 100%) for each component
+    percentages: {
+      fopAssessment: fop.percentage,
+      dsaAssessment: dsa.percentage,
+      quants: quants.percentage,
+      verbal: verbal.percentage,
+      logical: logical.percentage,
+      aptitudeTotal: aptitudeTotal.percentage,
+    },
+
+    // Max denominators definition
+    maxDenominators: MAX_DENOMINATORS,
+
+    // Full component breakdown with scores, denominators, and percentage strings
+    breakdown: {
+      fopAssessment: fop,
+      dsaAssessment: dsa,
+      quants: quants,
+      verbal: verbal,
+      logical: logical,
+      aptitudeTotal: aptitudeTotal,
+    },
+
     computedScores: {
-      quantsScore: student.quantsScore ?? 0,
-      verbalScore: student.verbalScore ?? 0,
-      logicalScore: student.logicalScore ?? 0,
-      aptitudeTotal: student.aptitudeTotal ?? 0,
+      quantsScore: student.quantsScore ?? quants.score,
+      verbalScore: student.verbalScore ?? verbal.score,
+      logicalScore: student.logicalScore ?? logical.score,
+      aptitudeTotal: aptitudeTotal.score,
       technicalProficiency: student.technicalProficiency ?? 0,
       hireScore: student.hireScore ?? 0,
     },
@@ -50,3 +124,4 @@ export async function GET(
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }
 }
+
