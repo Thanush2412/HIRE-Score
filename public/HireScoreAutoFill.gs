@@ -8,6 +8,7 @@
  * 
  * Column Headers Detected from Spreadsheet:
  * - Reg. Number: "Register", "Register Number", "Registration Number", "Reg No"
+ * - Total Hire Score: "TOTAL HIRE SCORE(OUT OF 1000)", "TOTAL HIRE SCORE", "HIRE SCORE"
  * - FOP: "FOP"
  * - DSA: "DSA"
  * - Aptitude: "Aptitude" (Combines Quants + Logical + Verbal)
@@ -44,7 +45,7 @@ function onOpen() {
 }
 
 /**
- * Auto-fills FOP, DSA, Aptitude across ALL 12 Placement Eligibility sheets.
+ * Auto-fills Total Hire Score, FOP, DSA, Aptitude across ALL 12 Placement Eligibility sheets.
  */
 function autoFillAllPlacementSheets() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -73,7 +74,7 @@ function autoFillAllPlacementSheets() {
 }
 
 /**
- * Auto-fills FOP, DSA, Aptitude on Current Active Sheet only.
+ * Auto-fills Total Hire Score, FOP, DSA, Aptitude on Current Active Sheet only.
  */
 function autoFillCurrentSheet() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
@@ -94,14 +95,18 @@ function processPlacementSheet(sheet) {
   if (regInfo.colIdx === -1) return 0;
   const regColIdx = regInfo.colIdx;
 
-  // 2. Read Line 7 Headers for score columns
+  // 2. Read Line 6 & Line 7 Headers for score columns (combining row 6 and row 7 text)
+  const row6 = sheet.getRange(6, 1, 1, lastCol).getValues()[0].map(String);
   const row7 = sheet.getRange(7, 1, 1, lastCol).getValues()[0].map(String);
-  const colFop = findColumnIndex(row7, ["fop"]);
-  const colDsa = findColumnIndex(row7, ["dsa"]);
-  const colApt = findColumnIndex(row7, ["aptitude", "apt"]);
-  const colQuants = findColumnIndex(row7, ["numerical ability", "advanced quantitative", "quant", "quants"]);
-  const colLogical = findColumnIndex(row7, ["reasoning ability", "logical", "reasoning"]);
-  const colVerbal = findColumnIndex(row7, ["verbal ability", "verbal"]);
+  const combinedHeaders = row7.map((h7, idx) => (row6[idx] ? (row6[idx] + " " + h7) : h7));
+
+  const colHireScore = findColumnIndex(combinedHeaders, ["total hire score", "hire score", "hire_score"]);
+  const colFop = findColumnIndex(combinedHeaders, ["fop"]);
+  const colDsa = findColumnIndex(combinedHeaders, ["dsa"]);
+  const colApt = findColumnIndex(combinedHeaders, ["aptitude", "apt"]);
+  const colQuants = findColumnIndex(combinedHeaders, ["numerical ability", "advanced quantitative", "quant", "quants"]);
+  const colLogical = findColumnIndex(combinedHeaders, ["reasoning ability", "logical", "reasoning"]);
+  const colVerbal = findColumnIndex(combinedHeaders, ["verbal ability", "verbal"]);
 
   const startRow = 8; // Data starts on Line 8
   const numRows = lastRow - 7;
@@ -111,6 +116,7 @@ function processPlacementSheet(sheet) {
   const regValues = sheet.getRange(startRow, regColIdx + 1, numRows, 1).getValues();
 
   // Buffers for batch writing
+  const hireScoreValues = colHireScore !== -1 ? new Array(numRows).fill([""]) : null;
   const fopValues = colFop !== -1 ? new Array(numRows).fill([""]) : null;
   const dsaValues = colDsa !== -1 ? new Array(numRows).fill([""]) : null;
   const aptValues = colApt !== -1 ? new Array(numRows).fill([""]) : null;
@@ -129,27 +135,20 @@ function processPlacementSheet(sheet) {
       const response = UrlFetchApp.fetch(baseUrl + encodeURIComponent(rawReg), { muteHttpExceptions: true });
       if (response.getResponseCode() === 200) {
         const data = JSON.parse(response.getContentText());
-        const scores = data.scores || {};
         const percentages = data.percentages || {};
-        const computed = data.computedScores || {};
 
-        // FOP out of 75 / DSA out of 100
-        const fop = scores.fopAssessment ?? 0;
-        const dsa = scores.dsaAssessment ?? 0;
-        const quants = Number(scores.quants ?? 0);
-        const logical = Number(scores.logical ?? 0);
-        const verbal = Number(scores.verbal ?? 0);
+        // Total Hire Score (Out of 1000)
+        const totalHireScore = data.hireScore ?? data.scores?.hireScore ?? data.computedScores?.hireScore ?? 0;
 
-        // Percentage equivalents
-        const fopPct = percentages.fopAssessment ?? 0;
-        const dsaPct = percentages.dsaAssessment ?? 0;
-        const quantsPct = percentages.quants ?? 0;
-        const logicalPct = percentages.logical ?? 0;
-        const verbalPct = percentages.verbal ?? 0;
+        // Direct percentages / scores from API
+        const fop = percentages.fopAssessment ?? 0;
+        const dsa = percentages.dsaAssessment ?? 0;
+        const quants = percentages.quants ?? 0;
+        const logical = percentages.logical ?? 0;
+        const verbal = percentages.verbal ?? 0;
+        const aptitude = percentages.aptitudeTotal ?? 0;
 
-        // Combined Aptitude total = Quants + Logical + Verbal (out of 150)
-        const aptitude = (computed.aptitudeTotal && computed.aptitudeTotal > 0) ? computed.aptitudeTotal : (quants + logical + verbal);
-
+        if (hireScoreValues) hireScoreValues[i] = [totalHireScore];
         if (fopValues) fopValues[i] = [fop];
         if (dsaValues) dsaValues[i] = [dsa];
         if (aptValues) aptValues[i] = [aptitude];
@@ -165,6 +164,7 @@ function processPlacementSheet(sheet) {
   }
 
   // 4. Batch write updated values back to Google Sheet
+  if (hireScoreValues) sheet.getRange(startRow, colHireScore + 1, numRows, 1).setValues(hireScoreValues);
   if (fopValues) sheet.getRange(startRow, colFop + 1, numRows, 1).setValues(fopValues);
   if (dsaValues) sheet.getRange(startRow, colDsa + 1, numRows, 1).setValues(dsaValues);
   if (aptValues) sheet.getRange(startRow, colApt + 1, numRows, 1).setValues(aptValues);
@@ -189,25 +189,30 @@ function inspectHeaders() {
   }
 
   const regInfo = findRegNoColumn(sheet, 7, lastCol);
+  const row6 = sheet.getRange(6, 1, 1, lastCol).getValues()[0].map(String);
   const row7 = sheet.getRange(7, 1, 1, lastCol).getValues()[0].map(String);
-  const colFop = findColumnIndex(row7, ["fop"]);
-  const colDsa = findColumnIndex(row7, ["dsa"]);
-  const colApt = findColumnIndex(row7, ["aptitude", "apt"]);
-  const colQuants = findColumnIndex(row7, ["numerical ability", "advanced quantitative", "quant", "quants"]);
-  const colLogical = findColumnIndex(row7, ["reasoning ability", "logical", "reasoning"]);
-  const colVerbal = findColumnIndex(row7, ["verbal ability", "verbal"]);
+  const combined = row7.map((h7, idx) => (row6[idx] ? (row6[idx] + " " + h7) : h7));
+
+  const colHireScore = findColumnIndex(combined, ["total hire score", "hire score", "hire_score"]);
+  const colFop = findColumnIndex(combined, ["fop"]);
+  const colDsa = findColumnIndex(combined, ["dsa"]);
+  const colApt = findColumnIndex(combined, ["aptitude", "apt"]);
+  const colQuants = findColumnIndex(combined, ["numerical ability", "advanced quantitative", "quant", "quants"]);
+  const colLogical = findColumnIndex(combined, ["reasoning ability", "logical", "reasoning"]);
+  const colVerbal = findColumnIndex(combined, ["verbal ability", "verbal"]);
 
   let msg = "🔍 HEADER ANALYSIS FOR '" + sheet.getName() + "':\n\n";
   msg += (regInfo.colIdx !== -1)
     ? "✅ Reg. Number Column: Col " + colLetter(regInfo.colIdx) + " (Row " + regInfo.rowIdx + ": '" + regInfo.headerName + "')\n"
     : "❌ Reg. Number Column: NOT FOUND across Rows 1-7\n";
 
-  msg += "• FOP Column: " + (colFop !== -1 ? "Col " + colLetter(colFop) + " (" + row7[colFop] + ")" : "❌ Not Found") + "\n";
-  msg += "• DSA Column: " + (colDsa !== -1 ? "Col " + colLetter(colDsa) + " (" + row7[colDsa] + ")" : "❌ Not Found") + "\n";
-  msg += "• Aptitude Column (Combined): " + (colApt !== -1 ? "Col " + colLetter(colApt) + " (" + row7[colApt] + ")" : "❌ Not Found") + "\n";
-  msg += "• Verbal Column: " + (colVerbal !== -1 ? "Col " + colLetter(colVerbal) + " (" + row7[colVerbal] + ")" : "❌ Not Found") + "\n";
-  msg += "• Logical Column: " + (colLogical !== -1 ? "Col " + colLetter(colLogical) + " (" + row7[colLogical] + ")" : "❌ Not Found") + "\n";
-  msg += "• Quants Column: " + (colQuants !== -1 ? "Col " + colLetter(colQuants) + " (" + row7[colQuants] + ")" : "❌ Not Found") + "\n";
+  msg += "• TOTAL HIRE SCORE Column: " + (colHireScore !== -1 ? "Col " + colLetter(colHireScore) + " (" + combined[colHireScore] + ")" : "❌ Not Found") + "\n";
+  msg += "• FOP Column: " + (colFop !== -1 ? "Col " + colLetter(colFop) + " (" + combined[colFop] + ")" : "❌ Not Found") + "\n";
+  msg += "• DSA Column: " + (colDsa !== -1 ? "Col " + colLetter(colDsa) + " (" + combined[colDsa] + ")" : "❌ Not Found") + "\n";
+  msg += "• Aptitude Column (Combined): " + (colApt !== -1 ? "Col " + colLetter(colApt) + " (" + combined[colApt] + ")" : "❌ Not Found") + "\n";
+  msg += "• Verbal Column: " + (colVerbal !== -1 ? "Col " + colLetter(colVerbal) + " (" + combined[colVerbal] + ")" : "❌ Not Found") + "\n";
+  msg += "• Logical Column: " + (colLogical !== -1 ? "Col " + colLetter(colLogical) + " (" + combined[colLogical] + ")" : "❌ Not Found") + "\n";
+  msg += "• Quants Column: " + (colQuants !== -1 ? "Col " + colLetter(colQuants) + " (" + combined[colQuants] + ")" : "❌ Not Found") + "\n";
 
   ui.alert(msg);
 }

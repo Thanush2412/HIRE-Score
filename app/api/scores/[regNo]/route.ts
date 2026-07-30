@@ -51,6 +51,7 @@ function formatScoresResponse(student: any) {
 
   const aptRawTotal = student.aptitudeTotal ?? (quants.score + verbal.score + logical.score);
   const aptitudeTotal = normalizeComponentScore(aptRawTotal, MAX_DENOMINATORS.aptitudeTotal);
+  const hireScore = Math.round(Number(student.hireScore ?? 0));
 
   return {
     registrationNumber: student.registrationNumber,
@@ -58,6 +59,7 @@ function formatScoresResponse(student: any) {
     college: student.college || null,
     department: student.department || null,
     year: student.year || null,
+    hireScore: hireScore, // Total Hire Score out of 1000
 
     // Scores normalized to their respective max denominators (e.g. FOP out of 75)
     scores: {
@@ -66,6 +68,7 @@ function formatScoresResponse(student: any) {
       quants: quants.score,
       verbal: verbal.score,
       logical: logical.score,
+      hireScore: hireScore,
     },
 
     // Percentage equivalent (0 - 100%) for each component
