@@ -32,7 +32,23 @@ export function saveNqtAssessments(assessments: FpcNqtAssessment[]): void {
 
 export function addNqtAssessments(newRecords: FpcNqtAssessment[]): FpcNqtAssessment[] {
   const current = getStoredNqtAssessments();
-  const updated = [...newRecords, ...current];
+  const map = new Map<string, FpcNqtAssessment>();
+  
+  // Load existing assessments keyed by lowercased assessmentName
+  current.forEach(item => {
+    if (item && item.assessmentName) {
+      map.set(item.assessmentName.trim().toLowerCase(), item);
+    }
+  });
+
+  // Upsert/update with new assessments
+  newRecords.forEach(item => {
+    if (item && item.assessmentName) {
+      map.set(item.assessmentName.trim().toLowerCase(), item);
+    }
+  });
+
+  const updated = Array.from(map.values());
   saveNqtAssessments(updated);
   return updated;
 }

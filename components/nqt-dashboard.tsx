@@ -37,8 +37,18 @@ interface StudentConsolidated {
   matchedDbStudent: boolean;
 }
 
+interface DbStudentItem {
+  id?: string;
+  registrationNumber: string;
+  name: string;
+  email: string;
+  department: string;
+  college: string;
+}
+
 export function NqtDashboard() {
   const [assessments, setAssessments] = useState<FpcNqtAssessment[]>([]);
+  const [dbStudents, setDbStudents] = useState<DbStudentItem[]>([]);
   const [activeTab, setActiveTab] = useState<"students" | "consolidated" | "assessments">("students");
   const [search, setSearch] = useState("");
   const [isUploading, setIsUploading] = useState(false);
@@ -53,92 +63,206 @@ export function NqtDashboard() {
   const [progressStudent, setProgressStudent] = useState<StudentConsolidated | null>(null);
   const [expandedLogIdx, setExpandedLogIdx] = useState<number | null>(null);
 
+  const [filterMatchedOnly, setFilterMatchedOnly] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setAssessments(getStoredNqtAssessments());
+
+    // Fetch full Hire DB student directory (510+ students)
+    fetch("/api/students")
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          const list: DbStudentItem[] = data.map((s: any) => ({
+            id: s.id,
+            registrationNumber: String(s.registrationNumber || "").trim(),
+            name: String(s.name || "").trim(),
+            email: String(s.email || "").trim(),
+            department: String(s.department || "").trim(),
+            college: String(s.college || "").trim(),
+          }));
+          setDbStudents(list);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const summary = computeFpcNqtSummary(assessments);
 
-  // Extract raw student records across all uploaded assessments
-  const allStudents = useMemo(() => {
-    const list: (FpcNqtStudentResult & { assessmentName: string; assessmentId: string; uploadedAt: string })[] = [];
+  // Extract student records across all uploaded assessments and merge with Hire DB students roster
+  const { consolidatedStudents, allStudents, evaluatedCount } = useMemo(() => {
+    const attemptsMap = new Map<string, (FpcNqtStudentResult & { assessmentName: string; assessmentId: string; uploadedAt: string })[]>();
+
+    // 1. Group uploaded NQT test attempts by student identifier
     assessments.forEach(ass => {
       if (ass.students && ass.students.length > 0) {
         ass.students.forEach(st => {
+          const emailClean = String(st.email || "").trim().toLowerCase();
+          let regClean = String(st.registrationNumber || "").trim().toLowerCase();
+          if (regClean.endsWith(".0")) regClean = regClean.slice(0, -2);
+          const nameClean = String(st.name || "").trim().toLowerCase();
+
+          const key = regClean || emailClean || nameClean;
+          if (!key) return;
+
           const num = st.numerical || 0;
           const verb = st.verbal || 0;
           const reas = st.reasoning || 0;
           const adv = st.advQuant || 0;
           const apt = st.aptitude || Math.round(((num + verb + reas + adv) / 4) * 100) / 100;
 
-          list.push({
+          const item = {
             ...st,
             aptitude: apt,
             assessmentName: ass.assessmentName,
             assessmentId: ass.id,
             uploadedAt: ass.uploadedAt,
+          };
+
+          const existing = attemptsMap.get(key) || [];
+          existing.push(item);
+          attemptsMap.set(key, existing);
+        });
+      }
+    });
+
+    const consolidatedMap = new Map<string, StudentConsolidated>();
+    const allRecordsList: (FpcNqtStudentResult & { assessmentName: string; assessmentId: string; uploadedAt: string })[] = [];
+    const processedKeys = new Set<string>();
+
+    // 2. Process all Hire DB students first
+    dbStudents.forEach(dbSt => {
+      const emailClean = dbSt.email.toLowerCase();
+      let regClean = dbSt.registrationNumber.toLowerCase();
+      if (regClean.endsWith(".0")) regClean = regClean.slice(0, -2);
+      const nameClean = dbSt.name.toLowerCase();
+
+      const attempts = (regClean && attemptsMap.get(regClean)) ||
+                       (emailClean && attemptsMap.get(emailClean)) ||
+                       (nameClean && attemptsMap.get(nameClean)) || [];
+
+      if (regClean) processedKeys.add(regClean);
+      if (emailClean) processedKeys.add(emailClean);
+      if (nameClean) processedKeys.add(nameClean);
+
+      const studentKey = (dbSt.registrationNumber || dbSt.email || dbSt.name).toLowerCase();
+
+      if (attempts.length > 0) {
+        attempts.sort((a, b) => new Date(a.uploadedAt).getTime() - new Date(b.uploadedAt).getTime());
+        const first = attempts[0].overall;
+        const latest = attempts[attempts.length - 1].overall;
+
+        consolidatedMap.set(studentKey, {
+          key: studentKey,
+          registrationNumber: dbSt.registrationNumber,
+          name: dbSt.name,
+          email: dbSt.email,
+          department: dbSt.department,
+          college: dbSt.college,
+          attempts,
+          firstOverall: first,
+          latestOverall: latest,
+          latestAptitude: attempts[attempts.length - 1].aptitude,
+          latestCoding: attempts[attempts.length - 1].coding,
+          deltaOverall: Math.round((latest - first) * 100) / 100,
+          matchedDbStudent: true,
+        });
+
+        attempts.forEach(att => {
+          allRecordsList.push({
+            ...att,
+            registrationNumber: dbSt.registrationNumber || att.registrationNumber || "",
+            email: dbSt.email || att.email || "",
+            name: dbSt.name || att.name || "",
+            department: dbSt.department || att.department || "",
+            college: dbSt.college || att.college || "",
+            matchedDbStudent: true,
           });
         });
-      }
-    });
-    return list;
-  }, [assessments]);
-
-  // Group student records by Reg Number (or email/name) to build consolidated progress tracking
-  const consolidatedStudents = useMemo<StudentConsolidated[]>(() => {
-    const map = new Map<string, StudentConsolidated>();
-
-    allStudents.forEach(st => {
-      const key = st.registrationNumber
-        ? String(st.registrationNumber).trim().toLowerCase()
-        : st.email
-          ? String(st.email).trim().toLowerCase()
-          : String(st.name).trim().toLowerCase();
-
-      if (!key) return;
-
-      const existing = map.get(key);
-      const attemptItem = {
-        ...st,
-        assessmentName: st.assessmentName,
-        uploadedAt: st.uploadedAt,
-      };
-
-      if (!existing) {
-        map.set(key, {
-          key,
-          registrationNumber: st.registrationNumber || "",
-          name: st.name,
-          email: st.email || "",
-          department: st.department || "",
-          college: st.college || "",
-          attempts: [attemptItem],
-          firstOverall: st.overall,
-          latestOverall: st.overall,
-          latestAptitude: st.aptitude,
-          latestCoding: st.coding,
-          deltaOverall: 0,
-          matchedDbStudent: !!st.matchedDbStudent,
-        });
       } else {
-        existing.attempts.push(attemptItem);
-        // Sort attempts chronologically
-        existing.attempts.sort((a, b) => new Date(a.uploadedAt).getTime() - new Date(b.uploadedAt).getTime());
-        const first = existing.attempts[0].overall;
-        const latest = existing.attempts[existing.attempts.length - 1].overall;
-        existing.firstOverall = first;
-        existing.latestOverall = latest;
-        existing.latestAptitude = existing.attempts[existing.attempts.length - 1].aptitude;
-        existing.latestCoding = existing.attempts[existing.attempts.length - 1].coding;
-        existing.deltaOverall = Math.round((latest - first) * 100) / 100;
-        if (st.matchedDbStudent) existing.matchedDbStudent = true;
+        // Hire DB student without NQT attempts yet
+        consolidatedMap.set(studentKey, {
+          key: studentKey,
+          registrationNumber: dbSt.registrationNumber,
+          name: dbSt.name,
+          email: dbSt.email,
+          department: dbSt.department,
+          college: dbSt.college,
+          attempts: [],
+          firstOverall: 0,
+          latestOverall: 0,
+          latestAptitude: 0,
+          latestCoding: 0,
+          deltaOverall: 0,
+          matchedDbStudent: true,
+        });
+
+        allRecordsList.push({
+          registrationNumber: dbSt.registrationNumber,
+          name: dbSt.name,
+          email: dbSt.email,
+          department: dbSt.department,
+          college: dbSt.college,
+          numerical: 0,
+          verbal: 0,
+          reasoning: 0,
+          aptitude: 0,
+          advQuant: 0,
+          coding: 0,
+          overall: 0,
+          matchedDbStudent: true,
+          assessmentName: "Not Attempted",
+          assessmentId: `unattempted-${dbSt.registrationNumber || dbSt.email}`,
+          uploadedAt: "",
+        });
       }
     });
 
-    return Array.from(map.values());
-  }, [allStudents]);
+    // 3. Add remaining NQT upload students that are not in Hire DB
+    attemptsMap.forEach((attempts, k) => {
+      if (processedKeys.has(k)) return;
+
+      const firstSt = attempts[0];
+      attempts.sort((a, b) => new Date(a.uploadedAt).getTime() - new Date(b.uploadedAt).getTime());
+      const first = attempts[0].overall;
+      const latest = attempts[attempts.length - 1].overall;
+
+      consolidatedMap.set(k, {
+        key: k,
+        registrationNumber: firstSt.registrationNumber || "",
+        name: firstSt.name || "Unknown Student",
+        email: firstSt.email || "",
+        department: firstSt.department || "",
+        college: firstSt.college || "",
+        attempts,
+        firstOverall: first,
+        latestOverall: latest,
+        latestAptitude: attempts[attempts.length - 1].aptitude,
+        latestCoding: attempts[attempts.length - 1].coding,
+        deltaOverall: Math.round((latest - first) * 100) / 100,
+        matchedDbStudent: false,
+      });
+
+      attempts.forEach(att => {
+        allRecordsList.push({
+          ...att,
+          matchedDbStudent: false,
+        });
+      });
+    });
+
+    const consolidatedList = Array.from(consolidatedMap.values());
+    const evaluated = consolidatedList.filter(s => s.attempts.length > 0).length;
+
+    return {
+      consolidatedStudents: consolidatedList,
+      allStudents: allRecordsList,
+      evaluatedCount: evaluated,
+    };
+  }, [assessments, dbStudents]);
+
 
   // Recharts Assessment Progress Trend dataset
   const chartData = useMemo(() => {
@@ -242,20 +366,42 @@ export function NqtDashboard() {
     a.assessmentName.toLowerCase().includes(search.toLowerCase())
   );
 
-  const filteredStudents = allStudents.filter(s =>
-    (s.name && s.name.toLowerCase().includes(search.toLowerCase())) ||
-    (s.registrationNumber && s.registrationNumber.toLowerCase().includes(search.toLowerCase())) ||
-    (s.email && s.email.toLowerCase().includes(search.toLowerCase())) ||
-    (s.assessmentName && s.assessmentName.toLowerCase().includes(search.toLowerCase()))
-  );
+  const filteredStudents = useMemo(() => {
+    return allStudents.filter(s => {
+      if (filterMatchedOnly && !s.matchedDbStudent && !(s.registrationNumber && s.email)) {
+        return false;
+      }
+      const q = search.toLowerCase();
+      return (
+        !q ||
+        (s.name && s.name.toLowerCase().includes(q)) ||
+        (s.registrationNumber && s.registrationNumber.toLowerCase().includes(q)) ||
+        (s.email && s.email.toLowerCase().includes(q)) ||
+        (s.assessmentName && s.assessmentName.toLowerCase().includes(q)) ||
+        (s.department && s.department.toLowerCase().includes(q)) ||
+        (s.college && s.college.toLowerCase().includes(q))
+      );
+    });
+  }, [allStudents, search, filterMatchedOnly]);
 
-  const filteredConsolidated = consolidatedStudents.filter(s =>
-    (s.name && s.name.toLowerCase().includes(search.toLowerCase())) ||
-    (s.registrationNumber && s.registrationNumber.toLowerCase().includes(search.toLowerCase())) ||
-    (s.email && s.email.toLowerCase().includes(search.toLowerCase()))
-  );
+  const filteredConsolidated = useMemo(() => {
+    return consolidatedStudents.filter(s => {
+      if (filterMatchedOnly && !s.matchedDbStudent && !(s.registrationNumber && s.email)) {
+        return false;
+      }
+      const q = search.toLowerCase();
+      return (
+        !q ||
+        (s.name && s.name.toLowerCase().includes(q)) ||
+        (s.registrationNumber && s.registrationNumber.toLowerCase().includes(q)) ||
+        (s.email && s.email.toLowerCase().includes(q)) ||
+        (s.department && s.department.toLowerCase().includes(q)) ||
+        (s.college && s.college.toLowerCase().includes(q))
+      );
+    });
+  }, [consolidatedStudents, search, filterMatchedOnly]);
 
-  const matchedStudentCount = allStudents.filter(s => s.matchedDbStudent || s.registrationNumber).length;
+  const matchedStudentCount = allStudents.filter(s => s.matchedDbStudent || (s.registrationNumber && s.email)).length;
 
   return (
     <div className="space-y-6 pb-12">
@@ -355,13 +501,13 @@ export function NqtDashboard() {
 
         <Card className="border-border bg-card shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Unique Students</CardTitle>
+            <CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Hire DB Students</CardTitle>
             <Users className="h-4 w-4 text-indigo-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{consolidatedStudents.length > 0 ? consolidatedStudents.length : summary.totalConducted}</div>
+            <div className="text-2xl font-bold">{consolidatedStudents.length}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              {matchedStudentCount > 0 ? `${matchedStudentCount} linked with Reg Numbers` : "Evaluated students"}
+              {evaluatedCount > 0 ? `${evaluatedCount} evaluated in NQT tests` : "Total students from Hire DB"}
             </p>
           </CardContent>
         </Card>
@@ -499,20 +645,33 @@ export function NqtDashboard() {
             </div>
           </div>
 
-          <div className="w-full sm:w-72">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                type="text"
-                placeholder={
-                  activeTab === "assessments"
-                    ? "Search assessment name..."
-                    : "Search Reg No, Name or Email..."
-                }
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="pl-9 text-sm rounded-lg"
-              />
+          <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
+            <Button
+              variant={filterMatchedOnly ? "default" : "outline"}
+              size="sm"
+              onClick={() => setFilterMatchedOnly(!filterMatchedOnly)}
+              className="text-xs font-semibold rounded-lg shrink-0"
+              title="Show only students matched with Hire DB"
+            >
+              <UserCheck className="h-3.5 w-3.5 mr-1 text-emerald-500" />
+              Hire DB Matched ({matchedStudentCount})
+            </Button>
+
+            <div className="w-full sm:w-72">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="text"
+                  placeholder={
+                    activeTab === "assessments"
+                      ? "Search assessment name..."
+                      : "Search Reg No, Name, Email, College..."
+                  }
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className="pl-9 text-sm rounded-lg"
+                />
+              </div>
             </div>
           </div>
         </CardHeader>
@@ -526,6 +685,8 @@ export function NqtDashboard() {
                   <TableRow className="bg-muted/50 text-xs uppercase tracking-wider font-bold">
                     <TableHead className="font-bold">Reg Number</TableHead>
                     <TableHead className="font-bold">Student Name</TableHead>
+                    <TableHead className="font-bold">Email Address</TableHead>
+                    <TableHead className="font-bold">Dept / College</TableHead>
                     <TableHead className="font-bold">Test Report</TableHead>
                     <TableHead className="font-bold text-center bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">Aptitude %</TableHead>
                     <TableHead className="font-bold text-center">Coding %</TableHead>
@@ -536,7 +697,7 @@ export function NqtDashboard() {
                 <TableBody>
                   {filteredStudents.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
+                      <TableCell colSpan={9} className="text-center py-12 text-muted-foreground">
                         {assessments.length === 0 ? (
                           <div className="flex flex-col items-center justify-center space-y-3">
                             <FileSpreadsheet className="h-10 w-10 text-muted-foreground/40" />
@@ -573,26 +734,60 @@ export function NqtDashboard() {
 
                         <TableCell className="font-semibold text-foreground text-xs">{st.name}</TableCell>
 
-                        <TableCell className="text-xs text-muted-foreground max-w-[180px] truncate" title={st.assessmentName}>
-                          {st.assessmentName}
+                        <TableCell className="font-mono text-xs text-muted-foreground">
+                          {st.email ? (
+                            <span className="text-foreground/90">{st.email}</span>
+                          ) : (
+                            <span className="text-muted-foreground/50 italic">—</span>
+                          )}
                         </TableCell>
 
-                        {/* Combined Aptitude Column (Numerical + Verbal + Reasoning + AdvQuant) */}
+                        <TableCell className="text-xs text-muted-foreground">
+                          {st.department || st.college ? (
+                            <span>{[st.department, st.college].filter(Boolean).join(" • ")}</span>
+                          ) : (
+                            <span className="text-muted-foreground/50 italic">—</span>
+                          )}
+                        </TableCell>
+
+                        <TableCell className="text-xs max-w-[180px] truncate" title={st.assessmentName}>
+                          {st.assessmentName === "Not Attempted" ? (
+                            <span className="text-muted-foreground/60 italic text-[11px]">Not Attempted</span>
+                          ) : (
+                            <span className="text-muted-foreground font-medium">{st.assessmentName}</span>
+                          )}
+                        </TableCell>
+
+                        {/* Combined Aptitude Column */}
                         <TableCell className="text-center bg-indigo-500/5 font-bold text-xs text-indigo-600 dark:text-indigo-400">
-                          <div className="flex flex-col items-center">
-                            <span>{st.aptitude}%</span>
-                            <span className="text-[9px] font-normal text-muted-foreground" title={`Num: ${st.numerical}% | Verbal: ${st.verbal}% | Reasoning: ${st.reasoning}% | AdvQuant: ${st.advQuant}%`}>
-                              N:{st.numerical}% V:{st.verbal}% R:{st.reasoning}% AQ:{st.advQuant}%
-                            </span>
-                          </div>
+                          {st.assessmentName === "Not Attempted" ? (
+                            <span className="text-muted-foreground/50 font-normal">—</span>
+                          ) : (
+                            <div className="flex flex-col items-center">
+                              <span>{st.aptitude}%</span>
+                              <span className="text-[9px] font-normal text-muted-foreground" title={`Num: ${st.numerical}% | Verbal: ${st.verbal}% | Reasoning: ${st.reasoning}% | AdvQuant: ${st.advQuant}%`}>
+                                N:{st.numerical}% V:{st.verbal}% R:{st.reasoning}% AQ:{st.advQuant}%
+                              </span>
+                            </div>
+                          )}
                         </TableCell>
 
-                        <TableCell className="text-center text-xs font-medium">{st.coding}%</TableCell>
+                        <TableCell className="text-center text-xs font-medium">
+                          {st.assessmentName === "Not Attempted" ? (
+                            <span className="text-muted-foreground/50 font-normal">—</span>
+                          ) : (
+                            <span>{st.coding}%</span>
+                          )}
+                        </TableCell>
 
                         <TableCell className="text-center">
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-primary/10 text-primary border border-primary/20">
-                            {st.overall}%
-                          </span>
+                          {st.assessmentName === "Not Attempted" ? (
+                            <span className="text-muted-foreground/50 text-xs italic px-2 py-0.5 rounded bg-muted/60">—</span>
+                          ) : (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-primary/10 text-primary border border-primary/20">
+                              {st.overall}%
+                            </span>
+                          )}
                         </TableCell>
 
                         <TableCell className="text-center">
@@ -640,8 +835,23 @@ export function NqtDashboard() {
                     filteredConsolidated.map((st) => (
                       <TableRow key={st.key} className="hover:bg-muted/30">
                         <TableCell className="text-xs">
-                          <div className="font-bold text-foreground">{st.name}</div>
-                          <div className="font-mono text-[11px] text-primary">{st.registrationNumber || st.email || "Unlinked"}</div>
+                          <div className="font-bold text-foreground flex items-center gap-1.5">
+                            {st.name}
+                            {st.matchedDbStudent && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20" title="Matched to Student DB">
+                                DB Match
+                              </span>
+                            )}
+                          </div>
+                          <div className="font-mono text-[11px] text-primary">
+                            {st.registrationNumber ? st.registrationNumber : "No Reg No"}
+                            {st.email ? ` • ${st.email}` : ""}
+                          </div>
+                          {(st.department || st.college) && (
+                            <div className="text-[10px] text-muted-foreground mt-0.5">
+                              {[st.department, st.college].filter(Boolean).join(" • ")}
+                            </div>
+                          )}
                         </TableCell>
 
                         <TableCell className="text-center">
@@ -818,7 +1028,7 @@ export function NqtDashboard() {
       {/* ── SEE PROGRESS DIALOG MODAL (Matches HIRE Score Progress History Modal) ── */}
       {progressStudent && (
         <Dialog open={!!progressStudent} onOpenChange={(o) => { if (!o) setProgressStudent(null); }}>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto p-0 rounded-2xl border bg-card shadow-2xl">
+          <DialogContent className="sm:!max-w-[1050px] w-[95vw] max-h-[90vh] overflow-y-auto p-0 rounded-2xl border bg-card shadow-2xl">
             {/* Modal Header */}
             <DialogHeader className="p-5 border-b bg-muted/30">
               <div className="flex items-start justify-between">
@@ -833,10 +1043,25 @@ export function NqtDashboard() {
               </div>
 
               {/* Student Identity Card */}
-              <div className="mt-4 p-3 rounded-xl bg-background border flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="mt-4 p-3.5 rounded-xl bg-background border flex flex-wrap items-center justify-between gap-3 text-xs">
                 <div>
-                  <p className="font-bold text-foreground text-sm">{progressStudent.name}</p>
-                  <p className="font-mono text-primary text-xs font-medium">{progressStudent.registrationNumber || progressStudent.email || "Unlinked"}</p>
+                  <p className="font-bold text-foreground text-sm flex items-center gap-2">
+                    {progressStudent.name}
+                    {progressStudent.matchedDbStudent && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20" title="Matched to Student DB">
+                        DB Match
+                      </span>
+                    )}
+                  </p>
+                  <div className="font-mono text-primary text-xs font-medium mt-0.5 flex flex-wrap items-center gap-2">
+                    {progressStudent.registrationNumber && <span>{progressStudent.registrationNumber}</span>}
+                    {progressStudent.email && <span>• {progressStudent.email}</span>}
+                  </div>
+                  {(progressStudent.department || progressStudent.college) && (
+                    <div className="text-[11px] text-muted-foreground mt-0.5 font-medium">
+                      {[progressStudent.department, progressStudent.college].filter(Boolean).join(" • ")}
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
@@ -857,7 +1082,7 @@ export function NqtDashboard() {
               </div>
             </DialogHeader>
 
-            <div className="p-6 space-y-6">
+            <div className="p-6 pb-10 space-y-6">
               {/* Score Trend Bar Visualization */}
               <div className="p-4 rounded-xl border bg-muted/20 space-y-2">
                 <p className="text-xs font-bold uppercase text-muted-foreground">Test Overall Score Progression</p>

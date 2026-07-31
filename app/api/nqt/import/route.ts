@@ -24,8 +24,8 @@ export async function POST(req: NextRequest) {
       `SELECT registrationNumber, name, email, department, college FROM student_full_view`
     );
 
-    const dbEmailMap = new Map<string, { registrationNumber: string; name: string; department?: string; college?: string }>();
-    const dbRegMap = new Map<string, { registrationNumber: string; name: string; department?: string; college?: string }>();
+    const dbEmailMap = new Map<string, { registrationNumber: string; email?: string; name: string; department?: string; college?: string }>();
+    const dbRegMap = new Map<string, { registrationNumber: string; email?: string; name: string; department?: string; college?: string }>();
 
     (allDbStudents as any[]).forEach(s => {
       if (s.email) {
@@ -50,7 +50,9 @@ export async function POST(req: NextRequest) {
           if (dbMatch) {
             return {
               ...st,
-              registrationNumber: dbMatch.registrationNumber,
+              registrationNumber: dbMatch.registrationNumber || st.registrationNumber || "",
+              email: dbMatch.email || st.email || "",
+              name: dbMatch.name || st.name || "",
               department: dbMatch.department || st.department || "",
               college: dbMatch.college || st.college || "",
               matchedDbStudent: true,
