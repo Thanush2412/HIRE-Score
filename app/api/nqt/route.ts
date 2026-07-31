@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getPool } from "@/lib/db";
+import { getPool, getAllNqtAssessmentsFromDb } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -86,6 +86,9 @@ export async function GET(req: NextRequest) {
       };
     });
 
+    // Fetch persisted NQT assessments from MySQL DB
+    const savedAssessments = await getAllNqtAssessmentsFromDb();
+
     const totalCount = formattedStudents.length;
     const avgAptitude = totalCount > 0
       ? Math.round((formattedStudents.reduce((a, b) => a + b.aptitude, 0) / totalCount) * 100) / 100
@@ -99,6 +102,7 @@ export async function GET(req: NextRequest) {
         averageAptitude: avgAptitude,
       },
       students: formattedStudents,
+      assessments: savedAssessments,
     });
   } catch (err: any) {
     return NextResponse.json(
@@ -107,3 +111,4 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+

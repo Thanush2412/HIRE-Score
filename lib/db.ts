@@ -931,3 +931,137 @@ export async function getStudentsByRegNos(regNos: string[]): Promise<StoredStude
   );
   return (rows as any[]).map(fromRow);
 }
+
+// ── NQT Assessment DB Persistence ─────────────────────────────────────────────
+
+async function ensureNqtTableExists(conn: any) {
+  await conn.query(`
+    CREATE TABLE IF NOT EXISTS nqt_assessments (
+      id VARCHAR(255) PRIMARY KEY,
+      assessment_name VARCHAR(255) NOT NULL,
+      conducted_date VARCHAR(100),
+      students_count INT DEFAULT 0,
+      data LONGTEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+}
+
+export async function saveNqtAssessmentToDb(assessment: {
+  id: string;
+  assessmentName: string;
+  conductedDate?: string;
+  studentsCount?: number;
+  students?: any[];
+}): Promise<void> {
+  const pool = getPool();
+  const conn = await pool.getConnection();
+  try {
+    await ensureNqtTableExists(conn);
+    await conn.query(
+      `INSERT INTO nqt_assessments (id, assessment_name, conducted_date, students_count, data)
+       VALUES (?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+        assessment_name = VALUES(assessment_name),
+        conducted_date = VALUES(conducted_date),
+        students_count = VALUES(students_count),
+        data = VALUES(data)`,
+      [
+        assessment.id,
+        assessment.assessmentName || "FPC NQT Assessment",
+        assessment.conductedDate || new Date().toISOString(),
+        assessment.studentsCount || (assessment.students ? assessment.students.length : 0),
+        JSON.stringify(assessment)
+      ]
+    );
+  } finally {
+    conn.release();
+  }
+}
+
+export async function getAllNqtAssessmentsFromDb(): Promise<any[]> {
+  const pool = getPool();
+  const conn = await pool.getConnection();
+  try {
+    await ensureNqtTableExists(conn);
+    const [rows] = await conn.query(`SELECT data FROM nqt_assessments ORDER BY created_at DESC`);
+    return (rows as any[]).map(r => {
+      try {
+        return typeof r.data === "string" ? JSON.parse(r.data) : r.data;
+      } catch (e) {
+        return null;
+      }
+    }).filter(Boolean);
+  } finally {
+    conn.release();
+  }
+}
+
+export async function updateStudentNqtScoresInDb(
+  studentId: string,
+  scores: {
+    quants?: number;
+    logical?: number;
+    verbal?: number;
+    dsaAssessment?: number;
+    fopAssessment?: number;
+  }
+): Promise<void> {
+  const pool = getPool();
+  const conn = await pool.getConnection();
+  await conn.beginTransaction();
+
+  try {
+    // 1. Update aptitude scores if provided
+    if (scores.quants !== undefined || scores.logical !== undefined || scores.verbal !== undefined) {
+      await conn.query(
+        `INSERT INTO student_aptitude (student_id, quants, logical, verbal)
+         VALUES (?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+          quants = COALESCE(VALUES(quants), quants),
+          logical = COALESCE(VALUES(logical), logical),
+          verbal = COALESCE(VALUES(verbal), verbal)`,
+        [studentId, scores.quants ?? 0, scores.logical ?? 0, scores.verbal ?? 0]
+      );
+    }
+
+    // 2. Update technical coding scores if provided
+    if (scores.dsaAssessment !== undefined || scores.fopAssessment !== undefined) {
+      await conn.query(
+        `INSERT INTO student_technical (student_id, fop_assessment, dsa_assessment)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+          fop_assessment = COALESCE(VALUES(fop_assessment), fop_assessment),
+          dsa_assessment = COALESCE(VALUES(dsa_assessment), dsa_assessment)`,
+        [studentId, scores.fopAssessment ?? 0, scores.dsaAssessment ?? 0]
+      );
+    }
+
+    // 3. Recompute and save total hire score for student
+    const [resRows] = await conn.query("SELECT * FROM student_full_view WHERE id = ?", [studentId]);
+    if (Array.isArray(resRows) && resRows.length > 0) {
+      const student = fromRow(resRows[0]);
+      const computed = computeScores(student);
+
+      await conn.query(
+        `UPDATE student_scores SET
+          quants_score = ?, logical_score = ?, verbal_score = ?, aptitude_total = ?,
+          coding_assessment = ?, technical_proficiency = ?, hire_score = ?
+         WHERE student_id = ?`,
+        [
+          computed.quantsScore, computed.logicalScore, computed.verbalScore, computed.aptitudeTotal,
+          computed.codingAssessment, computed.technicalProficiency, computed.hireScore,
+          studentId
+        ]
+      );
+    }
+
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    console.error("Failed updating NQT student scores:", err);
+  } finally {
+    conn.release();
+  }
+}
+

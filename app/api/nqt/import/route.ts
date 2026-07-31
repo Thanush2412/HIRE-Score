@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseFpcNqtExcel } from "@/lib/nqt-parser";
-import { getPool } from "@/lib/db";
+import { getPool, saveNqtAssessmentToDb, updateStudentNqtScoresInDb } from "@/lib/db";
 import { FpcNqtStudentResult } from "@/lib/nqt-types";
 
 export async function POST(req: NextRequest) {
@@ -18,14 +18,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No valid assessment data found in file" }, { status: 400 });
     }
 
-    // Attempt DB matching for student rows if available
+    // Fetch DB students for matching
     const pool = getPool();
     const [allDbStudents] = await pool.query(
-      `SELECT registrationNumber, name, email, department, college FROM student_full_view`
+      `SELECT id, registrationNumber, name, email, department, college FROM student_full_view`
     );
 
-    const dbEmailMap = new Map<string, { registrationNumber: string; email?: string; name: string; department?: string; college?: string }>();
-    const dbRegMap = new Map<string, { registrationNumber: string; email?: string; name: string; department?: string; college?: string }>();
+    const dbEmailMap = new Map<string, { id: string; registrationNumber: string; email?: string; name: string; department?: string; college?: string }>();
+    const dbRegMap = new Map<string, { id: string; registrationNumber: string; email?: string; name: string; department?: string; college?: string }>();
 
     (allDbStudents as any[]).forEach(s => {
       if (s.email) {
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
       }
     });
 
-    assessments.forEach(ass => {
+    for (const ass of assessments) {
       if (ass.students && ass.students.length > 0) {
         ass.students = ass.students.map((st): FpcNqtStudentResult => {
           const emailClean = String(st.email || "").trim().toLowerCase();
@@ -48,6 +48,15 @@ export async function POST(req: NextRequest) {
           let dbMatch = dbEmailMap.get(emailClean) || dbRegMap.get(regClean);
 
           if (dbMatch) {
+            // Asynchronously update student NQT section scores in MySQL DB
+            updateStudentNqtScoresInDb(dbMatch.id, {
+              quants: st.numerical,
+              verbal: st.verbal,
+              logical: st.reasoning,
+              fopAssessment: st.advQuant,
+              dsaAssessment: st.coding
+            }).catch(e => console.error("Sync error for " + dbMatch?.registrationNumber + ":", e));
+
             return {
               ...st,
               registrationNumber: dbMatch.registrationNumber || st.registrationNumber || "",
@@ -64,10 +73,14 @@ export async function POST(req: NextRequest) {
           };
         });
       }
-    });
 
-    return NextResponse.json({ assessments });
+      // Persist the NQT assessment record into MySQL DB table `nqt_assessments`
+      await saveNqtAssessmentToDb(ass);
+    }
+
+    return NextResponse.json({ assessments, success: true, savedToDb: true });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || "Failed to process NQT file" }, { status: 500 });
   }
 }
+
