@@ -6,15 +6,10 @@
  * Target Sheets (12 Placement Eligibility Sheets):
  * - SDNB, AU, KC, AMET, Takshashila, SACAS, BCAS, NAAS, STC, S-Vyasa, TERF, TJS
  * 
- * Column Headers Detected from Spreadsheet:
- * - Reg. Number: "Register", "Register Number", "Registration Number", "Reg No"
- * - Total Hire Score: "TOTAL HIRE SCORE(OUT OF 1000)", "TOTAL HIRE SCORE", "HIRE SCORE"
- * - FOP: "FOP"
- * - DSA: "DSA"
- * - Aptitude: "Aptitude" (Combines Quants + Logical + Verbal)
- * - Verbal: "Verbal Ability" / "Verbal"
- * - Logical: "Reasoning Ability" / "Logical"
- * - Quants: "Numerical Ability" / "Advanced Quantitative" / "Quants"
+ * Column Headers & Insertion (Exact Column Y placement):
+ * - TOTAL HIRE SCORE(OUT OF 1000): Created right after 'Average Percentage' / 'Aptitude'
+ *   and right before 'No.Of. Assessment Conducted'.
+ * - Real-Time Logs: Displays live Spreadsheet toasts & progress logs during execution.
  * ==============================================================================
  */
 
@@ -45,13 +40,17 @@ function onOpen() {
 }
 
 /**
- * Auto-fills Total Hire Score, FOP, DSA, Aptitude across ALL 12 Placement Eligibility sheets.
+ * Auto-fills Total Hire Score, FOP, DSA, Aptitude across ALL 12 Placement Eligibility sheets
+ * with Real-Time Toast Logs.
  */
 function autoFillAllPlacementSheets() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheets = ss.getSheets();
   let totalProcessed = 0;
   let sheetsCount = 0;
+  let summaryLog = [];
+
+  ss.toast("🚀 Starting HIRE Score Auto-Fill across all sheets...", "HIRE Score Auto-Fill", 5);
 
   for (let i = 0; i < sheets.length; i++) {
     const sheet = sheets[i];
@@ -60,39 +59,51 @@ function autoFillAllPlacementSheets() {
     const isTarget = TARGET_SHEETS.some(t => sName === t.toUpperCase() || sName.includes("PLACEMENT ELIGIBILITY"));
 
     if (isTarget) {
-      const count = processPlacementSheet(sheet);
+      ss.toast("📄 Processing sheet (" + (sheetsCount + 1) + "): " + sheet.getName() + "...", "HIRE Score Auto-Fill", 5);
+      const count = processPlacementSheet(sheet, ss);
       totalProcessed += count;
       sheetsCount++;
+      summaryLog.push("• " + sheet.getName() + ": " + count + " records updated");
     }
   }
+
+  ss.toast("🎉 Auto-Fill Complete! Processed " + totalProcessed + " students.", "HIRE Score Auto-Fill", 10);
 
   SpreadsheetApp.getUi().alert(
     "🎉 AUTO-FILL COMPLETE!\n\n" +
     "• Placement Sheets Processed: " + sheetsCount + "\n" +
-    "• Total Student Records Populated: " + totalProcessed
+    "• Total Student Records Updated: " + totalProcessed + "\n\n" +
+    "Sheet Breakdown:\n" + summaryLog.join("\n")
   );
 }
 
 /**
- * Auto-fills Total Hire Score, FOP, DSA, Aptitude on Current Active Sheet only.
+ * Auto-fills Total Hire Score, FOP, DSA, Aptitude on Current Active Sheet only
+ * with Real-Time Toast Logs.
  */
 function autoFillCurrentSheet() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  const count = processPlacementSheet(sheet);
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getActiveSheet();
+  ss.toast("⚡ Processing current sheet: " + sheet.getName() + "...", "HIRE Score Auto-Fill", 5);
+  const count = processPlacementSheet(sheet, ss);
+  ss.toast("🎉 Updated " + count + " records in " + sheet.getName(), "HIRE Score Auto-Fill", 10);
   SpreadsheetApp.getUi().alert("🎉 Updated " + count + " student records in sheet: " + sheet.getName());
 }
 
 /**
- * Core processor for a single sheet
+ * Core processor for a single sheet with Real-Time Toast Logs & exact Column Y placement
  */
-function processPlacementSheet(sheet) {
-  const lastRow = sheet.getLastRow();
-  const lastCol = sheet.getLastColumn();
+function processPlacementSheet(sheet, ss) {
+  let lastRow = sheet.getLastRow();
+  let lastCol = sheet.getLastColumn();
   if (lastRow <= 7 || lastCol === 0) return 0; // Data starts on Line 8
 
   // 1. Locate Registration Number column across Rows 1-7
   const regInfo = findRegNoColumn(sheet, 7, lastCol);
-  if (regInfo.colIdx === -1) return 0;
+  if (regInfo.colIdx === -1) {
+    Logger.log("Skipping '" + sheet.getName() + "': Reg. Number column not found.");
+    return 0;
+  }
   const regColIdx = regInfo.colIdx;
 
   // 2. Read Line 6 & Line 7 Headers for score columns (combining row 6 and row 7 text)
@@ -100,13 +111,72 @@ function processPlacementSheet(sheet) {
   const row7 = sheet.getRange(7, 1, 1, lastCol).getValues()[0].map(String);
   const combinedHeaders = row7.map((h7, idx) => (row6[idx] ? (row6[idx] + " " + h7) : h7));
 
-  const colHireScore = findColumnIndex(combinedHeaders, ["total hire score", "hire score", "hire_score"]);
+  let colHireScore = findColumnIndex(combinedHeaders, ["total hire score", "hire score", "hire_score"]);
   const colFop = findColumnIndex(combinedHeaders, ["fop"]);
   const colDsa = findColumnIndex(combinedHeaders, ["dsa"]);
   const colApt = findColumnIndex(combinedHeaders, ["aptitude", "apt"]);
   const colQuants = findColumnIndex(combinedHeaders, ["numerical ability", "advanced quantitative", "quant", "quants"]);
   const colLogical = findColumnIndex(combinedHeaders, ["reasoning ability", "logical", "reasoning"]);
   const colVerbal = findColumnIndex(combinedHeaders, ["verbal ability", "verbal"]);
+  const colNoOfAssess = findColumnIndex(combinedHeaders, ["no.of. assessment", "no of assessment", "assessment conducted"]);
+
+  // ── Exact Column Y Placement: Create TOTAL HIRE SCORE(OUT OF 1000) right before 'No.Of. Assessment' / after 'Average Percentage' ──
+  if (colHireScore === -1) {
+    let insertAfterIdx = -1;
+
+    // Preference 1: Insert right before 'No.Of. Assessment Conducted'
+    if (colNoOfAssess !== -1) {
+      insertAfterIdx = colNoOfAssess - 1;
+    } else {
+      // Preference 2: Insert right after 'Average Percentage' or 'Aptitude'
+      for (let c = 0; c < combinedHeaders.length; c++) {
+        if (combinedHeaders[c].toLowerCase().includes("average percentage")) {
+          insertAfterIdx = c;
+        }
+      }
+      if (insertAfterIdx === -1) {
+        insertAfterIdx = colApt !== -1 ? colApt : (colDsa !== -1 ? colDsa : (colFop !== -1 ? colFop : lastCol - 1));
+      }
+    }
+
+    if (insertAfterIdx >= 0) {
+      sheet.insertColumnAfter(insertAfterIdx + 1);
+      colHireScore = insertAfterIdx + 1; // 0-based index of new Column Y
+    } else {
+      sheet.insertColumnAfter(lastCol);
+      colHireScore = lastCol;
+    }
+
+    lastCol = sheet.getLastColumn();
+
+    // Set Header values for Row 6 and Row 7
+    sheet.getRange(6, colHireScore + 1).setValue("HIRE Assessment Score (Latest Month)");
+    sheet.getRange(7, colHireScore + 1).setValue("TOTAL HIRE SCORE(OUT OF 1000)");
+
+    // Apply header styling matching screenshot
+    try {
+      const sampleCol = (colApt !== -1 ? colApt : (colDsa !== -1 ? colDsa : (colFop !== -1 ? colFop : 0))) + 1;
+      
+      const targetHeaderRow7 = sheet.getRange(7, colHireScore + 1);
+      const srcHeaderRow7 = sheet.getRange(7, sampleCol);
+      targetHeaderRow7.setBackground(srcHeaderRow7.getBackground());
+      targetHeaderRow7.setFontColor(srcHeaderRow7.getFontColor());
+      targetHeaderRow7.setFontWeight("bold");
+      targetHeaderRow7.setHorizontalAlignment("center");
+      targetHeaderRow7.setVerticalAlignment("middle");
+      targetHeaderRow7.setWrap(true);
+
+      const targetHeaderRow6 = sheet.getRange(6, colHireScore + 1);
+      const srcHeaderRow6 = sheet.getRange(6, sampleCol);
+      targetHeaderRow6.setBackground(srcHeaderRow6.getBackground());
+      targetHeaderRow6.setFontColor(srcHeaderRow6.getFontColor());
+      targetHeaderRow6.setFontWeight("bold");
+      targetHeaderRow6.setHorizontalAlignment("center");
+      targetHeaderRow6.setVerticalAlignment("middle");
+    } catch (err) {
+      Logger.log("Styling copy warning: " + err.message);
+    }
+  }
 
   const startRow = 8; // Data starts on Line 8
   const numRows = lastRow - 7;
@@ -130,6 +200,11 @@ function processPlacementSheet(sheet) {
   for (let i = 0; i < numRows; i++) {
     const rawReg = String(regValues[i][0] || "").trim();
     if (!rawReg) continue;
+
+    // Real-Time Progress Toast every 15 rows
+    if (ss && (i % 15 === 0 || i === numRows - 1)) {
+      ss.toast("⚡ [" + sheet.getName() + "] Processing student " + (i + 1) + " of " + numRows + "...", "HIRE Score Auto-Fill", 3);
+    }
 
     try {
       const response = UrlFetchApp.fetch(baseUrl + encodeURIComponent(rawReg), { muteHttpExceptions: true });
@@ -176,7 +251,7 @@ function processPlacementSheet(sheet) {
 }
 
 /**
- * Inspect Headers helper
+ * Inspect Headers helper with Real-time toast
  */
 function inspectHeaders() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
@@ -206,7 +281,7 @@ function inspectHeaders() {
     ? "✅ Reg. Number Column: Col " + colLetter(regInfo.colIdx) + " (Row " + regInfo.rowIdx + ": '" + regInfo.headerName + "')\n"
     : "❌ Reg. Number Column: NOT FOUND across Rows 1-7\n";
 
-  msg += "• TOTAL HIRE SCORE Column: " + (colHireScore !== -1 ? "Col " + colLetter(colHireScore) + " (" + combined[colHireScore] + ")" : "❌ Not Found") + "\n";
+  msg += "• TOTAL HIRE SCORE Column: " + (colHireScore !== -1 ? "Col " + colLetter(colHireScore) + " (" + combined[colHireScore] + ")" : "⚡ Will be Auto-Created at Column Y on Run") + "\n";
   msg += "• FOP Column: " + (colFop !== -1 ? "Col " + colLetter(colFop) + " (" + combined[colFop] + ")" : "❌ Not Found") + "\n";
   msg += "• DSA Column: " + (colDsa !== -1 ? "Col " + colLetter(colDsa) + " (" + combined[colDsa] + ")" : "❌ Not Found") + "\n";
   msg += "• Aptitude Column (Combined): " + (colApt !== -1 ? "Col " + colLetter(colApt) + " (" + combined[colApt] + ")" : "❌ Not Found") + "\n";

@@ -916,10 +916,18 @@ export async function updateStudentLeetcodeRank(
 
 export async function getStudentsByRegNos(regNos: string[]): Promise<StoredStudent[]> {
   if (regNos.length === 0) return [];
+  const cleanList = Array.from(new Set(regNos.map(r => {
+    let s = String(r ?? "").trim();
+    if (s.endsWith(".0")) s = s.slice(0, -2);
+    return s;
+  }).filter(Boolean)));
+
+  if (cleanList.length === 0) return [];
   const pool = getPool();
+  const placeholders = cleanList.map(() => "?").join(",");
   const [rows] = await pool.query(
-    `SELECT * FROM student_full_view WHERE registrationNumber IN (${regNos.map(() => "?").join(",")})`,
-    regNos
+    `SELECT * FROM student_full_view WHERE registrationNumber IN (${placeholders}) OR TRIM(registrationNumber) IN (${placeholders})`,
+    [...cleanList, ...cleanList]
   );
   return (rows as any[]).map(fromRow);
 }

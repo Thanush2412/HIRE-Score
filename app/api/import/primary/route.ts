@@ -39,7 +39,10 @@ function parseCEFR(v: unknown): string {
 const CEFR_FIELDS = new Set(["cefrGrammar","efSetListening","efSetSpeaking","efSetReading","efSetWriting"]);
 const STRING_FIELDS = new Set(["name","registrationNumber","department","year","phone","email","college","stream","leetcodeUrl","githubUrl"]);
 
+import { findBestSheet, findHeaderRow, cleanRegNo } from "@/lib/excel-utils";
+
 function castValue(key: string, raw: unknown): unknown {
+  if (key === "registrationNumber") return cleanRegNo(raw);
   if (CEFR_FIELDS.has(key)) return parseCEFR(raw);
   if (key === "pgPercentage") return parseNullableNum(raw);
   if (key === "leetcodeRank") return parseRankNum(raw);
@@ -88,19 +91,12 @@ export async function POST(req: NextRequest) {
 
     const buffer = await file.arrayBuffer();
     const wb = XLSX.read(buffer, { type: "array" });
-    const sheetName = wb.SheetNames.includes("HIRE_Score") ? "HIRE_Score" : wb.SheetNames[0];
-    const ws = wb.Sheets[sheetName];
+    const { ws } = findBestSheet(wb);
     if (!ws) return NextResponse.json({ error: "No sheets found in the uploaded file" }, { status: 400 });
 
     const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null }) as unknown[][];
 
-    const isHeaderRow = (row: unknown[]) => {
-      const nonEmpty = row.filter(c => c !== null && c !== "");
-      if (nonEmpty.length === 0) return false;
-      const stringCells = nonEmpty.filter(c => typeof c === "string" && isNaN(Number(c)));
-      return stringCells.length / nonEmpty.length >= 0.5;
-    };
-    const headerRowIdx = (rows[1] && isHeaderRow(rows[1])) ? 1 : 0;
+    const { headerRowIdx } = findHeaderRow(rows);
     const dataStartIdx = headerRowIdx + 1;
 
     const defaultMapping: Record<number, string> = {
@@ -136,6 +132,9 @@ export async function POST(req: NextRequest) {
         }
       }
       if (!student.name && !student.registrationNumber) continue;
+
+      // Ensure registrationNumber is cleanly formatted
+      student.registrationNumber = cleanRegNo(student.registrationNumber);
 
       // Infer degreeType: if PG percentage is non-null and greater than 0, it's PG
       const isPg = student.pgPercentage !== null && student.pgPercentage !== undefined && Number(student.pgPercentage) > 0;

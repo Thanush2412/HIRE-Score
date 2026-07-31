@@ -37,6 +37,8 @@ const DEFAULT_SECONDARY_MAP: Record<number, string> = {
   27: "otherCertifications",
 };
 
+import { findBestSheet, findHeaderRow, cleanRegNo } from "@/lib/excel-utils";
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
@@ -53,19 +55,12 @@ export async function POST(req: NextRequest) {
 
     const buffer = await file.arrayBuffer();
     const wb = XLSX.read(buffer, { type: "array" });
-    const sheetName = wb.SheetNames.includes("HIRE_Score") ? "HIRE_Score" : wb.SheetNames[0];
-    const ws = wb.Sheets[sheetName];
+    const { ws } = findBestSheet(wb);
     if (!ws) return NextResponse.json({ error: "No sheets found in the uploaded file" }, { status: 400 });
 
     const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null }) as unknown[][];
 
-    const isHeaderRow = (row: unknown[]) => {
-      const nonEmpty = row.filter(c => c !== null && c !== "");
-      if (nonEmpty.length === 0) return false;
-      const stringCells = nonEmpty.filter(c => typeof c === "string" && isNaN(Number(c)));
-      return stringCells.length / nonEmpty.length >= 0.5;
-    };
-    const headerRowIdx = (rows[1] && isHeaderRow(rows[1])) ? 1 : 0;
+    const { headerRowIdx } = findHeaderRow(rows);
     const dataStartIdx = headerRowIdx + 1;
 
     const secMap = new Map<string, Record<string, unknown>>();
@@ -74,7 +69,7 @@ export async function POST(req: NextRequest) {
       const row = rows[i] as unknown[];
       if (!row || row.every(c => c === null || c === "")) continue;
 
-      const regNo = String(row[regNoCol] ?? "").trim();
+      const regNo = cleanRegNo(row[regNoCol]);
       if (!regNo) continue;
 
       const patch: Record<string, unknown> = {};

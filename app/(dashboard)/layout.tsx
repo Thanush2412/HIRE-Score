@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Moon, Sun, LayoutDashboard, Users, UserPlus, Settings, Link2, LogOut } from "lucide-react";
+import { Moon, Sun, LayoutDashboard, Users, UserPlus, Settings, Link2, LogOut, Sparkles } from "lucide-react";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [dark, setDark] = useState(false);
@@ -43,6 +43,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const navItems = [
     { path: "/",            label: "Overview",    icon: LayoutDashboard },
     { path: "/students",    label: "Students",    icon: Users           },
+    { path: "/nqt",         label: "FPC NQT",     icon: Sparkles        },
     { path: "/add-student", label: "Add Student", icon: UserPlus        },
     { path: "/settings",    label: "Settings",    icon: Settings        },
   ];

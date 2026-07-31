@@ -8,22 +8,24 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Upload, FileSpreadsheet, CheckCircle2, XCircle, Key } from "lucide-react";
 
+import { findBestSheet, findHeaderRow } from "@/lib/excel-utils";
+
 // ── Field definitions ─────────────────────────────────────────────────────────
 const PRIMARY_FIELDS = [
-  { key: "registrationNumber",  label: "Reg. Number",              primaryKey: true,  headerMatches: ["reg", "registration", "roll"] },
-  { key: "name",                label: "Name",                     primaryKey: false, headerMatches: ["name", "student name"] },
-  { key: "college",             label: "College",                  primaryKey: false, headerMatches: ["college", "institution"] },
-  { key: "stream",              label: "Stream (Engg/Arts)",       primaryKey: false, headerMatches: ["stream", "programme type", "program type"] },
-  { key: "department",          label: "Department",               primaryKey: false, headerMatches: ["dept", "department", "branch"] },
-  { key: "year",                label: "Year",                     primaryKey: false, headerMatches: ["year"] },
-  { key: "phone",               label: "Phone",                    primaryKey: false, headerMatches: ["phone", "mobile", "contact"] },
-  { key: "email",               label: "Email",                    primaryKey: false, headerMatches: ["email", "mail"] },
-  { key: "xMarks",              label: "X Marks %",                primaryKey: false, headerMatches: ["x mark", "10th", "sslc", "x %", "x%"] },
-  { key: "xiiMarks",            label: "XII Marks %",              primaryKey: false, headerMatches: ["xii mark", "12th", "hsc", "xii %", "xii%"] },
-  { key: "ugPercentage",        label: "UG %",                     primaryKey: false, headerMatches: ["ug %", "ug%", "ug percentage", "under"] },
-  { key: "pgPercentage",        label: "PG %",                     primaryKey: false, headerMatches: ["pg %", "pg%", "pg percentage", "post"] },
-  { key: "noOfArrears",         label: "No. of Arrears",           primaryKey: false, headerMatches: ["no. of arrear", "no of arrear", "current arrear", "standing arrear"] },
-  { key: "historyOfArrears",    label: "History of Arrears",       primaryKey: false, headerMatches: ["history of arrear", "hist arrear", "total arrear"] },
+  { key: "registrationNumber",  label: "Reg. Number",              primaryKey: true,  headerMatches: ["reg", "registration", "roll", "usn", "register", "student id"] },
+  { key: "name",                label: "Name",                     primaryKey: false, headerMatches: ["name", "student name", "candidate name", "full name"] },
+  { key: "college",             label: "College",                  primaryKey: false, headerMatches: ["college", "institution", "campus", "inst"] },
+  { key: "stream",              label: "Stream (Engg/Arts)",       primaryKey: false, headerMatches: ["stream", "programme type", "program type", "degree"] },
+  { key: "department",          label: "Department",               primaryKey: false, headerMatches: ["dept", "department", "branch", "specialization"] },
+  { key: "year",                label: "Year",                     primaryKey: false, headerMatches: ["year", "batch"] },
+  { key: "phone",               label: "Phone",                    primaryKey: false, headerMatches: ["phone", "mobile", "contact", "cell"] },
+  { key: "email",               label: "Email",                    primaryKey: false, headerMatches: ["email", "mail", "e-mail"] },
+  { key: "xMarks",              label: "X Marks %",                primaryKey: false, headerMatches: ["x mark", "10th", "sslc", "x %", "x%", "10%"] },
+  { key: "xiiMarks",            label: "XII Marks %",              primaryKey: false, headerMatches: ["xii mark", "12th", "hsc", "xii %", "xii%", "12%"] },
+  { key: "ugPercentage",        label: "UG %",                     primaryKey: false, headerMatches: ["ug %", "ug%", "ug percentage", "under", "cgpa", "ug mark"] },
+  { key: "pgPercentage",        label: "PG %",                     primaryKey: false, headerMatches: ["pg %", "pg%", "pg percentage", "post", "pg mark"] },
+  { key: "noOfArrears",         label: "No. of Arrears",           primaryKey: false, headerMatches: ["no. of arrear", "no of arrear", "current arrear", "standing arrear", "arrear count", "arrears"] },
+  { key: "historyOfArrears",    label: "History of Arrears",       primaryKey: false, headerMatches: ["history of arrear", "hist arrear", "total arrear", "history arrear"] },
   { key: "cefrGrammar",         label: "CEFR",                     primaryKey: false, headerMatches: ["cefr grammar", "cefr", "grammar"] },
   { key: "efSetListening",      label: "EF SET Listening",         primaryKey: false, headerMatches: ["listening", "ef listen"] },
   { key: "efSetSpeaking",       label: "EF SET Speaking",          primaryKey: false, headerMatches: ["speaking", "ef speak"] },
@@ -32,19 +34,19 @@ const PRIMARY_FIELDS = [
   { key: "internalCodeathon",   label: "Internal Codeathon",       primaryKey: false, headerMatches: ["internal code", "int code", "internal hackathon"] },
   { key: "externalCodeathon",   label: "External Codeathon",       primaryKey: false, headerMatches: ["external code", "ext code", "external hackathon"] },
   { key: "githubProjects",      label: "GitHub Projects",          primaryKey: false, headerMatches: ["github", "git project", "mini project"] },
-  { key: "fullLengthProjects",  label: "Full Length Projects",     primaryKey: false, headerMatches: ["full length", "full project"] },
-  { key: "globalCertification", label: "Global Certification",     primaryKey: false, headerMatches: ["global cert"] },
-  { key: "otherCertifications", label: "Other Certifications",     primaryKey: false, headerMatches: ["other cert"] },
+  { key: "fullLengthProjects",  label: "Full Length Projects",     primaryKey: false, headerMatches: ["full length", "full project", "major project"] },
+  { key: "globalCertification", label: "Global Certification",     primaryKey: false, headerMatches: ["global cert", "global certification"] },
+  { key: "otherCertifications", label: "Other Certifications",     primaryKey: false, headerMatches: ["other cert", "other certification"] },
 ] as const;
 
 const SECONDARY_FIELDS = [
-  { key: "registrationNumber",  label: "Reg. Number",              primaryKey: true,  headerMatches: ["reg", "registration", "roll"] },
-  { key: "quants",              label: "Quants",                   primaryKey: false, headerMatches: ["quant"] },
-  { key: "logical",             label: "Logical",                  primaryKey: false, headerMatches: ["logical", "reasoning"] },
-  { key: "verbal",              label: "Verbal",                   primaryKey: false, headerMatches: ["verbal"] },
+  { key: "registrationNumber",  label: "Reg. Number",              primaryKey: true,  headerMatches: ["reg", "registration", "roll", "usn", "register", "student id"] },
+  { key: "quants",              label: "Quants",                   primaryKey: false, headerMatches: ["quant", "numerical"] },
+  { key: "logical",             label: "Logical",                  primaryKey: false, headerMatches: ["logical", "reasoning", "aptitude"] },
+  { key: "verbal",              label: "Verbal",                   primaryKey: false, headerMatches: ["verbal", "english"] },
   { key: "leetcodeRank",        label: "Leetcode Rank",            primaryKey: false, headerMatches: ["leetcode", "leet"] },
-  { key: "fopAssessment",       label: "FOP Assessment (75)",      primaryKey: false, headerMatches: ["fop"] },
-  { key: "dsaAssessment",       label: "DSA Assessment (100)",     primaryKey: false, headerMatches: ["dsa"] },
+  { key: "fopAssessment",       label: "FOP Assessment (75)",      primaryKey: false, headerMatches: ["fop", "programming"] },
+  { key: "dsaAssessment",       label: "DSA Assessment (100)",     primaryKey: false, headerMatches: ["dsa", "data structure"] },
 ] as const;
 
 type FieldDef = { key: string; label: string; primaryKey: boolean; headerMatches: readonly string[] };
@@ -52,13 +54,23 @@ type FieldDef = { key: string; label: string; primaryKey: boolean; headerMatches
 // ── Auto-map by matching Excel header text ────────────────────────────────────
 function autoMap(headers: string[], fields: readonly FieldDef[]): Record<string, number | "skip"> {
   const mapping: Record<string, number | "skip"> = {};
+  const usedCols = new Set<number>();
+
   for (const field of fields) {
     let found = -1;
     for (const match of field.headerMatches) {
-      const idx = headers.findIndex(h => h.toLowerCase().includes(match));
-      if (idx !== -1) { found = idx; break; }
+      const idx = headers.findIndex((h, i) => !usedCols.has(i) && h.toLowerCase().includes(match.toLowerCase()));
+      if (idx !== -1) {
+        found = idx;
+        break;
+      }
     }
-    mapping[field.key] = found !== -1 ? found : "skip";
+    if (found !== -1) {
+      mapping[field.key] = found;
+      usedCols.add(found);
+    } else {
+      mapping[field.key] = "skip";
+    }
   }
   return mapping;
 }
@@ -107,36 +119,18 @@ export function ImportDialog({ open, onClose, onImported, mode }: {
     setResult(null);
     const reader = new FileReader();
     reader.onload = (e) => {
-      const wb = XLSX.read(e.target?.result, { type: "array" });
-      const sheetName = wb.SheetNames.includes("HIRE_Score") ? "HIRE_Score" : wb.SheetNames[0];
-      const ws = wb.Sheets[sheetName];
-      if (!ws) { setResult({ error: "No sheets found in the uploaded file" }); return; }
-      const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null }) as unknown[][];
+      try {
+        const wb = XLSX.read(e.target?.result, { type: "array" });
+        const { ws } = findBestSheet(wb);
+        const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null }) as unknown[][];
 
-      // Detect which row is the header row:
-      // Try row index 1 first (row 2 in Excel), then row index 0 (row 1).
-      // A "header row" is one where most cells are non-numeric strings.
-      const isHeaderRow = (row: unknown[]) => {
-        const nonEmpty = row.filter(c => c !== null && c !== "");
-        if (nonEmpty.length === 0) return false;
-        const stringCells = nonEmpty.filter(c => typeof c === "string" && isNaN(Number(c)));
-        return stringCells.length / nonEmpty.length >= 0.5;
-      };
-
-      let headerRowIdx = 1; // default: row 2 in Excel
-      if (rows[1] && isHeaderRow(rows[1])) {
-        headerRowIdx = 1;
-      } else if (rows[0] && isHeaderRow(rows[0])) {
-        headerRowIdx = 0;
+        const { headerRowIdx, headers } = findHeaderRow(rows);
+        setExcelHeaders(headers);
+        setSampleRows(rows.slice(headerRowIdx + 1, headerRowIdx + 3));
+        setMapping(autoMap(headers, fields));
+      } catch (err: any) {
+        setResult({ error: err.message || "Failed to parse Excel file" });
       }
-
-      const headers = (rows[headerRowIdx] || []).map((h, i) =>
-        h !== null && h !== "" ? String(h).trim() : `Col ${i + 1}`
-      );
-      setExcelHeaders(headers);
-      // Show 2 sample data rows immediately after the header row
-      setSampleRows(rows.slice(headerRowIdx + 1, headerRowIdx + 3));
-      setMapping(autoMap(headers, fields));
     };
     reader.readAsArrayBuffer(f);
   };

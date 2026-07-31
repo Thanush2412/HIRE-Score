@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import { StudentData } from "./types";
+import { findBestSheet, findHeaderRow, cleanRegNo } from "./excel-utils";
 
 const CEFR_LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"];
 
@@ -27,7 +28,7 @@ function parseRankNum(val: unknown): number {
   return isNaN(n) ? 0 : n;
 }
 
-// Column indices (0-based, row index 2 = first data row)
+// Default Column indices fallback
 const C = {
   name: 0, regNo: 1, dept: 2, year: 3,
   xMarks: 4, xiiMarks: 5, ugPct: 6, pgPct: 7,
@@ -43,12 +44,13 @@ const C = {
 };
 
 function rowToStudent(row: unknown[]): StudentData | null {
-  if (!row[C.name]) return null;
+  if (!row[C.name] && !row[C.regNo]) return null;
+  const regNo = cleanRegNo(row[C.regNo]);
   return {
-    name: String(row[C.name] ?? ""),
-    registrationNumber: String(row[C.regNo] ?? ""),
-    department: String(row[C.dept] ?? ""),
-    year: String(row[C.year] ?? ""),
+    name: String(row[C.name] ?? "").trim(),
+    registrationNumber: regNo,
+    department: String(row[C.dept] ?? "").trim(),
+    year: String(row[C.year] ?? "").trim(),
     xMarks: parseNum(row[C.xMarks]),
     xiiMarks: parseNum(row[C.xiiMarks]),
     ugPercentage: parseNum(row[C.ugPct]),
@@ -64,8 +66,8 @@ function rowToStudent(row: unknown[]): StudentData | null {
     efSetReading: parseCEFR(row[C.efRead]),
     efSetWriting: parseCEFR(row[C.efWrite]),
     leetcodeRank: parseRankNum(row[C.leetcode]),
-    leetcodeUrl: "", // Not in Excel, will be filled manually
-    githubUrl: "", // Not in Excel, will be filled manually
+    leetcodeUrl: "",
+    githubUrl: "",
     fopAssessment: parseNum(row[C.fop]),
     dsaAssessment: parseNum(row[C.dsa]),
     internalCodeathon: parseNum(row[C.internalCode]),
@@ -87,17 +89,14 @@ function rowToStudent(row: unknown[]): StudentData | null {
   };
 }
 
-function getRows(buffer: ArrayBuffer): unknown[][] {
-  const wb = XLSX.read(buffer, { type: "array" });
-  const ws = wb.Sheets["HIRE_Score"];
-  if (!ws) throw new Error("Sheet 'HIRE_Score' not found");
-  return XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null }) as unknown[][];
-}
-
 export function parseExcelAll(buffer: ArrayBuffer): StudentData[] {
-  const rows = getRows(buffer);
+  const wb = XLSX.read(buffer, { type: "array" });
+  const { ws } = findBestSheet(wb);
+  const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null }) as unknown[][];
+  const { headerRowIdx } = findHeaderRow(rows);
+
   const result: StudentData[] = [];
-  for (let i = 2; i < rows.length; i++) {
+  for (let i = headerRowIdx + 1; i < rows.length; i++) {
     const s = rowToStudent(rows[i] as unknown[]);
     if (s) result.push(s);
   }
