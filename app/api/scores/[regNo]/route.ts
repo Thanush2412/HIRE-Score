@@ -53,6 +53,40 @@ function formatScoresResponse(student: any) {
   const aptitudeTotal = normalizeComponentScore(aptRawTotal, MAX_DENOMINATORS.aptitudeTotal);
   const hireScore = Math.round(Number(student.hireScore ?? 0));
 
+  // FPC NQT Assessment module percentage calculation
+  const numericalPct = quants.percentage;
+  const verbalPct = verbal.percentage;
+  const reasoningPct = logical.percentage;
+  const advQuantPct = quants.percentage;
+  const aptitudeAvgPct = Math.round(((numericalPct + verbalPct + reasoningPct + advQuantPct) / 4) * 100) / 100;
+  const codingAvgPct = dsa.percentage;
+  const overallAvgPct = Math.round(((aptitudeAvgPct + codingAvgPct) / 2) * 100) / 100;
+  const noOfAssessments = Number(student.noOfAssessmentsConducted ?? 1);
+
+  const fpcNqtAssessment = {
+    tableHeader: "FPC NQT Assessment",
+    noOfAssessmentConducted: noOfAssessments,
+    numericalAbilityPercentage: numericalPct,
+    verbalAbilityPercentage: verbalPct,
+    reasoningAbilityPercentage: reasoningPct,
+    advancedQuantitativeAndReasoningAbilityPercentage: advQuantPct,
+    aptitudeAveragePercentage: aptitudeAvgPct,
+    codingAveragePercentage: codingAvgPct,
+    overallAveragePercentage: overallAvgPct,
+
+    // Header mappings matching exact spreadsheet column headers
+    headers: {
+      "No.Of. Assessment Conducted": noOfAssessments,
+      "Numerical Ability( Percentage)": numericalPct,
+      "Verbal Ability( Percentage)": verbalPct,
+      "Reasoning Ability( Percentage)": reasoningPct,
+      "Advanced Quantitative and Reasoning Ability( Percentage)": advQuantPct,
+      "Aptitude Average %": aptitudeAvgPct,
+      "Coding (Average Percentage)": codingAvgPct,
+      "Overall (Average Percentage)": overallAvgPct,
+    }
+  };
+
   return {
     registrationNumber: student.registrationNumber,
     name: student.name,
@@ -60,6 +94,17 @@ function formatScoresResponse(student: any) {
     department: student.department || null,
     year: student.year || null,
     hireScore: hireScore, // Total Hire Score out of 1000
+
+    // FPC NQT Assessment Module Data & Exact Spreadsheet Headers
+    fpcNqtAssessment,
+    "No.Of. Assessment Conducted": noOfAssessments,
+    "Numerical Ability( Percentage)": numericalPct,
+    "Verbal Ability( Percentage)": verbalPct,
+    "Reasoning Ability( Percentage)": reasoningPct,
+    "Advanced Quantitative and Reasoning Ability( Percentage)": advQuantPct,
+    "Aptitude Average %": aptitudeAvgPct,
+    "Coding (Average Percentage)": codingAvgPct,
+    "Overall (Average Percentage)": overallAvgPct,
 
     // Scores normalized to their respective max denominators (e.g. FOP out of 75)
     scores: {
@@ -79,6 +124,13 @@ function formatScoresResponse(student: any) {
       verbal: verbal.percentage,
       logical: logical.percentage,
       aptitudeTotal: aptitudeTotal.percentage,
+      numericalAbility: numericalPct,
+      verbalAbility: verbalPct,
+      reasoningAbility: reasoningPct,
+      advancedQuantitativeAndReasoningAbility: advQuantPct,
+      aptitudeAverage: aptitudeAvgPct,
+      codingAverage: codingAvgPct,
+      overallAverage: overallAvgPct,
     },
 
     // Max denominators definition

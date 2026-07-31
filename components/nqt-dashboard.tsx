@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import { parseFpcNqtExcel, computeFpcNqtSummary } from "@/lib/nqt-parser";
-import { getStoredNqtAssessments, addNqtAssessments, deleteNqtAssessment, clearNqtAssessments } from "@/lib/nqt-store";
+import { getStoredNqtAssessments, addNqtAssessments, saveNqtAssessments, deleteNqtAssessment, clearNqtAssessments } from "@/lib/nqt-store";
 import { FpcNqtAssessment, FpcNqtStudentResult } from "@/lib/nqt-types";
 import { NqtImportDialog } from "@/components/nqt-import-dialog";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -11,15 +11,135 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Upload, FileSpreadsheet, Trash2, Award, TrendingUp, BarChart3, Search,
-  CheckCircle2, Sparkles, UserCheck, Users, Layers, SlidersHorizontal, ArrowUpRight, ArrowDownRight, Activity, Brain, Calendar, HelpCircle
+  CheckCircle2, Sparkles, UserCheck, Users, Layers, SlidersHorizontal, ArrowUpRight, ArrowDownRight, Activity, Brain, Calendar, HelpCircle,
+  Filter, ArrowUpDown, ArrowUp, ArrowDown, Columns, RotateCcw, Pencil, Eye, Check, Save, X
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend
 } from "recharts";
 
 const BRAND_RED = "#F05136";
+
+export type NqtColumnKey =
+  | "registrationNumber"
+  | "name"
+  | "email"
+  | "department"
+  | "assessmentName"
+  | "aptitude"
+  | "coding"
+  | "overall";
+
+export interface NqtColDef {
+  key: NqtColumnKey;
+  label: string;
+}
+
+const NQT_COLUMNS: NqtColDef[] = [
+  { key: "registrationNumber", label: "Reg Number" },
+  { key: "name",               label: "Student Name" },
+  { key: "email",              label: "Email Address" },
+  { key: "department",         label: "Dept / College" },
+  { key: "assessmentName",     label: "Test Report" },
+  { key: "aptitude",           label: "Aptitude %" },
+  { key: "coding",             label: "Coding %" },
+  { key: "overall",            label: "Overall %" },
+];
+
+function NqtColumnFilterPopoverContent({
+  columnKey,
+  label,
+  students,
+  activeFilters,
+  onApplyFilter,
+}: {
+  columnKey: NqtColumnKey;
+  label: string;
+  students: any[];
+  activeFilters: string[];
+  onApplyFilter: (vals: string[]) => void;
+}) {
+  const [query, setQuery] = useState("");
+
+  const uniqueValues = useMemo(() => {
+    const vals = new Set<string>();
+    students.forEach(s => {
+      let v = "";
+      if (columnKey === "department") {
+        v = [s.department, s.college].filter(Boolean).join(" • ") || "Unspecified";
+      } else {
+        v = String(s[columnKey] ?? "").trim() || "Unspecified";
+      }
+      vals.add(v);
+    });
+    return Array.from(vals).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+  }, [students, columnKey]);
+
+  const filteredValues = useMemo(() => {
+    if (!query) return uniqueValues;
+    return uniqueValues.filter(v => v.toLowerCase().includes(query.toLowerCase()));
+  }, [uniqueValues, query]);
+
+  const selectedSet = useMemo(() => new Set(activeFilters), [activeFilters]);
+
+  const toggleVal = (val: string) => {
+    const next = new Set(selectedSet);
+    if (next.has(val)) next.delete(val);
+    else next.add(val);
+    onApplyFilter(Array.from(next));
+  };
+
+  const selectAll = () => onApplyFilter(filteredValues);
+  const clearAll = () => onApplyFilter([]);
+
+  return (
+    <div className="w-64 p-3 space-y-3 bg-popover rounded-xl shadow-xl border text-xs">
+      <div className="flex items-center justify-between font-bold border-b pb-2">
+        <span className="text-foreground">Filter {label}</span>
+        {selectedSet.size > 0 && (
+          <button onClick={clearAll} className="text-[10px] text-destructive hover:underline font-semibold">
+            Clear ({selectedSet.size})
+          </button>
+        )}
+      </div>
+
+      <Input
+        type="text"
+        placeholder={`Search ${label}...`}
+        value={query}
+        onChange={e => setQuery(e.target.value)}
+        className="h-7 text-xs rounded-md"
+      />
+
+      <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+        {filteredValues.length === 0 ? (
+          <p className="text-muted-foreground text-[11px] py-3 text-center">No options match query</p>
+        ) : (
+          filteredValues.map(val => (
+            <label key={val} className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-muted/60 cursor-pointer text-xs">
+              <input
+                type="checkbox"
+                checked={selectedSet.has(val)}
+                onChange={() => toggleVal(val)}
+                className="rounded border-muted-foreground/30 text-primary focus:ring-primary h-3.5 w-3.5"
+              />
+              <span className="truncate max-w-[180px] font-medium text-foreground" title={val}>{val}</span>
+            </label>
+          ))
+        )}
+      </div>
+
+      <div className="flex items-center justify-between border-t pt-2 text-[10px] text-muted-foreground">
+        <button onClick={selectAll} className="hover:text-primary font-semibold">Select All</button>
+        <span>{selectedSet.size} of {uniqueValues.length} selected</span>
+      </div>
+    </div>
+  );
+}
 
 interface StudentConsolidated {
   key: string;
@@ -64,6 +184,68 @@ export function NqtDashboard() {
   const [expandedLogIdx, setExpandedLogIdx] = useState<number | null>(null);
 
   const [filterMatchedOnly, setFilterMatchedOnly] = useState(false);
+  const [presetFilter, setPresetFilter] = useState<"all" | "attempted" | "unattempted" | "top" | "atRisk" | "growth">("all");
+
+  // Column Filtering, Visibility & Sorting state
+  const [columnFilters, setColumnFilters] = useState<Record<NqtColumnKey, string[]>>({
+    registrationNumber: [],
+    name: [],
+    email: [],
+    department: [],
+    assessmentName: [],
+    aptitude: [],
+    coding: [],
+    overall: [],
+  });
+
+  const [visibleCols, setVisibleCols] = useState<Record<NqtColumnKey, boolean>>({
+    registrationNumber: true,
+    name: true,
+    email: true,
+    department: true,
+    assessmentName: true,
+    aptitude: true,
+    coding: true,
+    overall: true,
+  });
+
+  const [sortKey, setSortKey] = useState<NqtColumnKey | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(25);
+
+  // Reset page to 1 when filters or tabs change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, filterMatchedOnly, columnFilters, activeTab, presetFilter]);
+
+  // Edit / Update Student state
+  const [editingStudent, setEditingStudent] = useState<any | null>(null);
+  const [editForm, setEditForm] = useState<{
+    registrationNumber: string;
+    name: string;
+    email: string;
+    department: string;
+    college: string;
+    numerical: number;
+    verbal: number;
+    reasoning: number;
+    advQuant: number;
+    coding: number;
+  }>({
+    registrationNumber: "",
+    name: "",
+    email: "",
+    department: "",
+    college: "",
+    numerical: 0,
+    verbal: 0,
+    reasoning: 0,
+    advQuant: 0,
+    coding: 0,
+  });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -362,30 +544,186 @@ export function NqtDashboard() {
     }
   };
 
+  const openEditStudentModal = (st: any) => {
+    setEditingStudent(st);
+    setEditForm({
+      registrationNumber: st.registrationNumber || "",
+      name: st.name || "",
+      email: st.email || "",
+      department: st.department || "",
+      college: st.college || "",
+      numerical: st.numerical || 0,
+      verbal: st.verbal || 0,
+      reasoning: st.reasoning || 0,
+      advQuant: st.advQuant || 0,
+      coding: st.coding || 0,
+    });
+  };
+
+  const handleSaveStudentEdit = () => {
+    if (!editingStudent) return;
+    const num = Number(editForm.numerical) || 0;
+    const verb = Number(editForm.verbal) || 0;
+    const reas = Number(editForm.reasoning) || 0;
+    const adv = Number(editForm.advQuant) || 0;
+    const apt = Math.round(((num + verb + reas + adv) / 4) * 100) / 100;
+    const coding = Number(editForm.coding) || 0;
+    const valid = [num, verb, reas, adv, coding].filter(v => v > 0);
+    const overall = valid.length > 0 ? Math.round((valid.reduce((a, b) => a + b, 0) / valid.length) * 100) / 100 : 0;
+
+    const targetAssId = editingStudent.assessmentId;
+    const targetReg = editingStudent.registrationNumber || editingStudent.email;
+
+    const updatedAssessments = assessments.map(ass => {
+      if (!targetAssId || ass.id === targetAssId) {
+        const updatedStudents = (ass.students || []).map(st => {
+          if (
+            (targetReg && st.registrationNumber === targetReg) ||
+            (editForm.email && st.email === editForm.email) ||
+            st.name === editingStudent.name
+          ) {
+            return {
+              ...st,
+              registrationNumber: editForm.registrationNumber,
+              name: editForm.name,
+              email: editForm.email,
+              department: editForm.department,
+              college: editForm.college,
+              numerical: num,
+              verbal: verb,
+              reasoning: reas,
+              advQuant: adv,
+              aptitude: apt,
+              coding,
+              overall,
+            };
+          }
+          return st;
+        });
+        return {
+          ...ass,
+          students: updatedStudents,
+        };
+      }
+      return ass;
+    });
+
+    setAssessments(updatedAssessments);
+    saveNqtAssessments(updatedAssessments);
+    setUploadMessage(`✅ Successfully updated student record for "${editForm.name}"!`);
+    setEditingStudent(null);
+  };
+
+  const activeColumnFilterCount = useMemo(() => {
+    return Object.values(columnFilters).reduce((sum, vals) => sum + (vals?.length ? 1 : 0), 0);
+  }, [columnFilters]);
+
+  const handleApplyColumnFilter = (colKey: NqtColumnKey, vals: string[]) => {
+    setColumnFilters(prev => ({ ...prev, [colKey]: vals }));
+  };
+
+  const handleClearAllColumnFilters = () => {
+    setColumnFilters({
+      registrationNumber: [],
+      name: [],
+      email: [],
+      department: [],
+      assessmentName: [],
+      aptitude: [],
+      coding: [],
+      overall: [],
+    });
+  };
+
+  const handleToggleSort = (key: NqtColumnKey) => {
+    if (sortKey === key) {
+      if (sortDir === "asc") setSortDir("desc");
+      else {
+        setSortKey(null);
+        setSortDir("asc");
+      }
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
   const filteredAssessments = assessments.filter(a =>
     a.assessmentName.toLowerCase().includes(search.toLowerCase())
   );
 
   const filteredStudents = useMemo(() => {
-    return allStudents.filter(s => {
+    let list = allStudents.filter(s => {
+      // Preset quick filter
+      if (presetFilter === "attempted" && s.assessmentName === "Not Attempted") return false;
+      if (presetFilter === "unattempted" && s.assessmentName !== "Not Attempted") return false;
+      if (presetFilter === "top" && (s.assessmentName === "Not Attempted" || s.overall < 60)) return false;
+      if (presetFilter === "atRisk" && (s.assessmentName === "Not Attempted" || s.overall >= 40)) return false;
+
       if (filterMatchedOnly && !s.matchedDbStudent && !(s.registrationNumber && s.email)) {
         return false;
       }
       const q = search.toLowerCase();
-      return (
-        !q ||
-        (s.name && s.name.toLowerCase().includes(q)) ||
-        (s.registrationNumber && s.registrationNumber.toLowerCase().includes(q)) ||
-        (s.email && s.email.toLowerCase().includes(q)) ||
-        (s.assessmentName && s.assessmentName.toLowerCase().includes(q)) ||
-        (s.department && s.department.toLowerCase().includes(q)) ||
-        (s.college && s.college.toLowerCase().includes(q))
-      );
+      if (q) {
+        const matchQ =
+          (s.name && s.name.toLowerCase().includes(q)) ||
+          (s.registrationNumber && s.registrationNumber.toLowerCase().includes(q)) ||
+          (s.email && s.email.toLowerCase().includes(q)) ||
+          (s.assessmentName && s.assessmentName.toLowerCase().includes(q)) ||
+          (s.department && s.department.toLowerCase().includes(q)) ||
+          (s.college && s.college.toLowerCase().includes(q));
+        if (!matchQ) return false;
+      }
+
+      for (const [colKey, selectedVals] of Object.entries(columnFilters)) {
+        if (!selectedVals || selectedVals.length === 0) continue;
+        const key = colKey as NqtColumnKey;
+        let val = "";
+        if (key === "department") {
+          val = [s.department, s.college].filter(Boolean).join(" • ") || "Unspecified";
+        } else {
+          val = String(s[key] ?? "").trim() || "Unspecified";
+        }
+        if (!selectedVals.includes(val)) {
+          return false;
+        }
+      }
+
+      return true;
     });
-  }, [allStudents, search, filterMatchedOnly]);
+
+    if (sortKey) {
+      list = [...list].sort((a, b) => {
+        let valA: any = a[sortKey];
+        let valB: any = b[sortKey];
+
+        if (sortKey === "department") {
+          valA = [a.department, a.college].filter(Boolean).join(" • ");
+          valB = [b.department, b.college].filter(Boolean).join(" • ");
+        }
+
+        if (typeof valA === "number" && typeof valB === "number") {
+          return sortDir === "asc" ? valA - valB : valB - valA;
+        }
+
+        const strA = String(valA || "").toLowerCase();
+        const strB = String(valB || "").toLowerCase();
+        return sortDir === "asc" ? strA.localeCompare(strB) : strB.localeCompare(strA);
+      });
+    }
+
+    return list;
+  }, [allStudents, search, filterMatchedOnly, columnFilters, sortKey, sortDir, presetFilter]);
 
   const filteredConsolidated = useMemo(() => {
-    return consolidatedStudents.filter(s => {
+    let list = consolidatedStudents.filter(s => {
+      // Preset quick filter
+      if (presetFilter === "attempted" && s.attempts.length === 0) return false;
+      if (presetFilter === "unattempted" && s.attempts.length > 0) return false;
+      if (presetFilter === "top" && (s.attempts.length === 0 || s.latestOverall < 60)) return false;
+      if (presetFilter === "atRisk" && (s.attempts.length === 0 || s.latestOverall >= 40)) return false;
+      if (presetFilter === "growth" && (s.attempts.length <= 1 || s.deltaOverall <= 0)) return false;
+
       if (filterMatchedOnly && !s.matchedDbStudent && !(s.registrationNumber && s.email)) {
         return false;
       }
@@ -399,7 +737,50 @@ export function NqtDashboard() {
         (s.college && s.college.toLowerCase().includes(q))
       );
     });
-  }, [consolidatedStudents, search, filterMatchedOnly]);
+
+    if (sortKey) {
+      list = [...list].sort((a, b) => {
+        let valA: any = (a as any)[sortKey];
+        let valB: any = (b as any)[sortKey];
+
+        if (sortKey === "department") {
+          valA = [a.department, a.college].filter(Boolean).join(" • ");
+          valB = [b.department, b.college].filter(Boolean).join(" • ");
+        } else if (sortKey === "overall") {
+          valA = a.latestOverall;
+          valB = b.latestOverall;
+        } else if (sortKey === "aptitude") {
+          valA = a.latestAptitude;
+          valB = b.latestAptitude;
+        } else if (sortKey === "coding") {
+          valA = a.latestCoding;
+          valB = b.latestCoding;
+        }
+
+        if (typeof valA === "number" && typeof valB === "number") {
+          return sortDir === "asc" ? valA - valB : valB - valA;
+        }
+
+        const strA = String(valA || "").toLowerCase();
+        const strB = String(valB || "").toLowerCase();
+        return sortDir === "asc" ? strA.localeCompare(strB) : strB.localeCompare(strA);
+      });
+    }
+
+    return list;
+  }, [consolidatedStudents, search, filterMatchedOnly, sortKey, sortDir, presetFilter]);
+
+  const totalStudentPages = Math.max(1, Math.ceil(filteredStudents.length / pageSize));
+  const paginatedStudents = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredStudents.slice(start, start + pageSize);
+  }, [filteredStudents, currentPage, pageSize]);
+
+  const totalConsolidatedPages = Math.max(1, Math.ceil(filteredConsolidated.length / pageSize));
+  const paginatedConsolidated = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredConsolidated.slice(start, start + pageSize);
+  }, [filteredConsolidated, currentPage, pageSize]);
 
   const matchedStudentCount = allStudents.filter(s => s.matchedDbStudent || (s.registrationNumber && s.email)).length;
 
@@ -535,7 +916,7 @@ export function NqtDashboard() {
         </Card>
       </div>
 
-      {/* Module Overview Section: Aptitude Heading (Numerical + Verbal + Reasoning + AdvQuant Combined) */}
+      {/* Module Performance Breakdown */}
       <Card className="border-border bg-card shadow-sm">
         <CardHeader>
           <CardTitle className="text-lg font-bold flex items-center gap-2">
@@ -546,7 +927,6 @@ export function NqtDashboard() {
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-6 md:grid-cols-3">
-          {/* Module 1: Aptitude (Combined Numerical, Verbal, Reasoning & Advanced Quant) */}
           <div className="space-y-3 p-4 rounded-xl bg-indigo-500/5 border border-indigo-500/20 md:col-span-2">
             <div className="flex justify-between items-center text-sm font-bold">
               <span className="text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5 text-base">
@@ -563,7 +943,6 @@ export function NqtDashboard() {
             </div>
           </div>
 
-          {/* Module 2: Coding */}
           <div className="space-y-3 p-4 rounded-xl bg-muted/30 border">
             <div className="flex justify-between items-center text-sm font-bold">
               <span className="text-foreground">Coding</span>
@@ -575,7 +954,7 @@ export function NqtDashboard() {
         </CardContent>
       </Card>
 
-      {/* Assessment Trend Progress Chart (Visible when multiple reports exist) */}
+      {/* Assessment Trend Chart */}
       {assessments.length > 1 && (
         <Card className="border-border bg-card shadow-sm">
           <CardHeader>
@@ -608,44 +987,42 @@ export function NqtDashboard() {
         </Card>
       )}
 
-      {/* Data Navigation Section with 3 Views */}
+      {/* Data Navigation Section */}
       <Card className="border-border bg-card shadow-sm">
-        <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant={activeTab === "students" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setActiveTab("students")}
-                className="font-semibold text-xs rounded-lg"
-              >
-                <UserCheck className="h-3.5 w-3.5 mr-1.5" />
-                All Student Records ({allStudents.length})
-              </Button>
+        <CardHeader className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant={activeTab === "students" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setActiveTab("students")}
+              className="font-semibold text-xs rounded-lg"
+            >
+              <UserCheck className="h-3.5 w-3.5 mr-1.5" />
+              All Student Records ({allStudents.length})
+            </Button>
 
-              <Button
-                variant={activeTab === "consolidated" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setActiveTab("consolidated")}
-                className="font-semibold text-xs rounded-lg"
-              >
-                <Activity className="h-3.5 w-3.5 mr-1.5" />
-                Consolidated Student Progress ({consolidatedStudents.length})
-              </Button>
+            <Button
+              variant={activeTab === "consolidated" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setActiveTab("consolidated")}
+              className="font-semibold text-xs rounded-lg"
+            >
+              <Activity className="h-3.5 w-3.5 mr-1.5" />
+              Consolidated Student Progress ({consolidatedStudents.length})
+            </Button>
 
-              <Button
-                variant={activeTab === "assessments" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setActiveTab("assessments")}
-                className="font-semibold text-xs rounded-lg"
-              >
-                <Layers className="h-3.5 w-3.5 mr-1.5" />
-                Assessment Reports ({assessments.length})
-              </Button>
-            </div>
+            <Button
+              variant={activeTab === "assessments" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setActiveTab("assessments")}
+              className="font-semibold text-xs rounded-lg"
+            >
+              <Layers className="h-3.5 w-3.5 mr-1.5" />
+              Assessment Reports ({assessments.length})
+            </Button>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               variant={filterMatchedOnly ? "default" : "outline"}
               size="sm"
@@ -657,15 +1034,54 @@ export function NqtDashboard() {
               Hire DB Matched ({matchedStudentCount})
             </Button>
 
-            <div className="w-full sm:w-72">
+            {/* Column Visibility Selector Popover */}
+            {activeTab === "students" && (
+              <Popover>
+                <PopoverTrigger className="inline-flex items-center justify-center gap-1.5 text-xs font-semibold rounded-lg border bg-background px-3 py-1.5 hover:bg-muted transition-colors shadow-2xs cursor-pointer">
+                  <Columns className="h-3.5 w-3.5" />
+                  Columns
+                </PopoverTrigger>
+                <PopoverContent className="w-56 p-3 bg-popover rounded-xl shadow-xl border text-xs" align="end">
+                  <div className="font-bold border-b pb-2 mb-2 text-foreground">Toggle Columns</div>
+                  <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                    {NQT_COLUMNS.map(col => (
+                      <label key={col.key} className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-muted/60 cursor-pointer text-xs">
+                        <input
+                          type="checkbox"
+                          checked={visibleCols[col.key]}
+                          onChange={e => setVisibleCols(prev => ({ ...prev, [col.key]: e.target.checked }))}
+                          className="rounded border-muted-foreground/30 text-primary"
+                        />
+                        <span className="font-medium text-foreground">{col.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            )}
+
+            {/* Reset Column Filters Button */}
+            {activeTab === "students" && activeColumnFilterCount > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleClearAllColumnFilters}
+                className="text-xs text-destructive hover:bg-destructive/10 font-semibold rounded-lg"
+              >
+                <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                Reset Filters ({activeColumnFilterCount})
+              </Button>
+            )}
+
+            <div className="w-full sm:w-64">
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
                   type="text"
                   placeholder={
                     activeTab === "assessments"
-                      ? "Search assessment name..."
-                      : "Search Reg No, Name, Email, College..."
+                      ? "Search assessment..."
+                      : "Search Reg No, Name, Email..."
                   }
                   value={search}
                   onChange={e => setSearch(e.target.value)}
@@ -676,28 +1092,147 @@ export function NqtDashboard() {
           </div>
         </CardHeader>
 
-        <CardContent>
+        <CardContent className="space-y-4">
+          {/* Quick Preset Filter Buttons Bar */}
+          <div className="flex flex-wrap items-center gap-1.5 p-2 rounded-xl bg-muted/30 border text-xs">
+            <span className="text-[11px] font-bold text-muted-foreground mr-1 uppercase tracking-wider flex items-center gap-1">
+              <Filter className="h-3 w-3 text-primary" /> Quick Filters:
+            </span>
+
+            <button
+              onClick={() => setPresetFilter("all")}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                presetFilter === "all"
+                  ? "bg-foreground text-background shadow-xs"
+                  : "bg-background border text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+            >
+              All Records ({allStudents.length})
+            </button>
+
+            <button
+              onClick={() => setPresetFilter("attempted")}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${
+                presetFilter === "attempted"
+                  ? "bg-blue-600 text-white shadow-xs font-bold"
+                  : "bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 hover:bg-blue-500/20"
+              }`}
+            >
+              <CheckCircle2 className="h-3 w-3" /> Attempted ({allStudents.filter(s => s.assessmentName !== "Not Attempted").length})
+            </button>
+
+            <button
+              onClick={() => setPresetFilter("unattempted")}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${
+                presetFilter === "unattempted"
+                  ? "bg-amber-600 text-white shadow-xs font-bold"
+                  : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 hover:bg-amber-500/20"
+              }`}
+            >
+              <HelpCircle className="h-3 w-3" /> Not Attempted ({allStudents.filter(s => s.assessmentName === "Not Attempted").length})
+            </button>
+
+            <button
+              onClick={() => setPresetFilter("top")}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${
+                presetFilter === "top"
+                  ? "bg-emerald-600 text-white shadow-xs font-bold"
+                  : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20"
+              }`}
+            >
+              <Award className="h-3 w-3" /> Top Performers (≥60%) ({allStudents.filter(s => s.overall >= 60 && s.assessmentName !== "Not Attempted").length})
+            </button>
+
+            <button
+              onClick={() => setPresetFilter("atRisk")}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${
+                presetFilter === "atRisk"
+                  ? "bg-rose-600 text-white shadow-xs font-bold"
+                  : "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 hover:bg-rose-500/20"
+              }`}
+            >
+              <TrendingUp className="h-3 w-3 rotate-180" /> At-Risk (&lt;40%) ({allStudents.filter(s => s.overall < 40 && s.assessmentName !== "Not Attempted").length})
+            </button>
+
+            {activeTab === "consolidated" && (
+              <button
+                onClick={() => setPresetFilter("growth")}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${
+                  presetFilter === "growth"
+                    ? "bg-indigo-600 text-white shadow-xs font-bold"
+                    : "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20"
+                }`}
+              >
+                <ArrowUpRight className="h-3 w-3" /> Growth (+%) ({consolidatedStudents.filter(s => s.attempts.length > 1 && s.deltaOverall > 0).length})
+              </button>
+            )}
+
+            {presetFilter !== "all" && (
+              <button
+                onClick={() => setPresetFilter("all")}
+                className="text-[10px] text-destructive hover:underline font-bold ml-auto cursor-pointer"
+              >
+                Reset Filter
+              </button>
+            )}
+          </div>
           {/* VIEW 1: All Student Test Records */}
           {activeTab === "students" && (
             <div className="rounded-xl border overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/50 text-xs uppercase tracking-wider font-bold">
-                    <TableHead className="font-bold">Reg Number</TableHead>
-                    <TableHead className="font-bold">Student Name</TableHead>
-                    <TableHead className="font-bold">Email Address</TableHead>
-                    <TableHead className="font-bold">Dept / College</TableHead>
-                    <TableHead className="font-bold">Test Report</TableHead>
-                    <TableHead className="font-bold text-center bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">Aptitude %</TableHead>
-                    <TableHead className="font-bold text-center">Coding %</TableHead>
-                    <TableHead className="font-bold text-center">Overall %</TableHead>
+                    <TableHead className="font-bold text-center w-10">#</TableHead>
+                    {NQT_COLUMNS.map(col => {
+                      if (!visibleCols[col.key]) return null;
+                      const isFiltered = (columnFilters[col.key]?.length || 0) > 0;
+
+                      return (
+                        <TableHead key={col.key} className="py-2.5 px-3">
+                          <div className="flex items-center justify-between gap-1">
+                            <button
+                              onClick={() => handleToggleSort(col.key)}
+                              className="flex items-center gap-1 font-bold hover:text-foreground transition-colors text-left"
+                            >
+                              <span>{col.label}</span>
+                              {sortKey === col.key ? (
+                                sortDir === "asc" ? <ArrowUp className="h-3 w-3 text-primary" /> : <ArrowDown className="h-3 w-3 text-primary" />
+                              ) : (
+                                <ArrowUpDown className="h-3 w-3 text-muted-foreground/40 hover:text-muted-foreground" />
+                              )}
+                            </button>
+
+                            <Popover>
+                              <PopoverTrigger
+                                className={`p-1 rounded-md hover:bg-muted/80 transition-colors ${
+                                  isFiltered ? "text-primary bg-primary/10 border border-primary/20" : "text-muted-foreground/50 hover:text-foreground"
+                                }`}
+                                title={`Filter ${col.label}`}
+                              >
+                                <Filter className="h-3 w-3" />
+                              </PopoverTrigger>
+                              <PopoverContent className="w-64 p-0 border-none shadow-none" align="start">
+                                <NqtColumnFilterPopoverContent
+                                  columnKey={col.key}
+                                  label={col.label}
+                                  students={allStudents}
+                                  activeFilters={columnFilters[col.key] || []}
+                                  onApplyFilter={vals => handleApplyColumnFilter(col.key, vals)}
+                                />
+                              </PopoverContent>
+                            </Popover>
+                          </div>
+                        </TableHead>
+                      );
+                    })}
                     <TableHead className="font-bold text-center">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
+
                 <TableBody>
-                  {filteredStudents.length === 0 ? (
+                  {paginatedStudents.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="text-center py-12 text-muted-foreground">
+                      <TableCell colSpan={10} className="text-center py-12 text-muted-foreground">
                         {assessments.length === 0 ? (
                           <div className="flex flex-col items-center justify-center space-y-3">
                             <FileSpreadsheet className="h-10 w-10 text-muted-foreground/40" />
@@ -715,93 +1250,126 @@ export function NqtDashboard() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredStudents.map((st, idx) => (
-                      <TableRow key={`${st.assessmentId}-${idx}`} className="hover:bg-muted/30">
-                        <TableCell className="font-mono text-xs font-bold">
-                          {st.registrationNumber ? (
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-primary">{st.registrationNumber}</span>
-                              {st.matchedDbStudent && (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20" title="Matched to Student DB">
-                                  DB Match
+                    paginatedStudents.map((st, idx) => {
+                      const globalIdx = ((currentPage - 1) * pageSize) + idx + 1;
+                      return (
+                        <TableRow key={`${st.assessmentId}-${idx}`} className="hover:bg-muted/30">
+                          <TableCell className="text-center text-xs font-mono text-muted-foreground font-semibold">
+                            {globalIdx}
+                          </TableCell>
+
+                          {visibleCols["registrationNumber"] && (
+                            <TableCell className="font-mono text-xs font-bold">
+                              {st.registrationNumber ? (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-primary">{st.registrationNumber}</span>
+                                  {st.matchedDbStudent && (
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20" title="Matched to Student DB">
+                                      DB Match
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground/60 italic text-[11px]">— Unlinked</span>
+                              )}
+                            </TableCell>
+                          )}
+
+                          {visibleCols["name"] && (
+                            <TableCell className="font-semibold text-foreground text-xs">{st.name}</TableCell>
+                          )}
+
+                          {visibleCols["email"] && (
+                            <TableCell className="font-mono text-xs text-muted-foreground">
+                              {st.email ? (
+                                <span className="text-foreground/90">{st.email}</span>
+                              ) : (
+                                <span className="text-muted-foreground/50 italic">—</span>
+                              )}
+                            </TableCell>
+                          )}
+
+                          {visibleCols["department"] && (
+                            <TableCell className="text-xs text-muted-foreground">
+                              {st.department || st.college ? (
+                                <span>{[st.department, st.college].filter(Boolean).join(" • ")}</span>
+                              ) : (
+                                <span className="text-muted-foreground/50 italic">—</span>
+                              )}
+                            </TableCell>
+                          )}
+
+                          {visibleCols["assessmentName"] && (
+                            <TableCell className="text-xs max-w-[180px] truncate" title={st.assessmentName}>
+                              {st.assessmentName === "Not Attempted" ? (
+                                <span className="text-muted-foreground/60 italic text-[11px]">Not Attempted</span>
+                              ) : (
+                                <span className="text-muted-foreground font-medium">{st.assessmentName}</span>
+                              )}
+                            </TableCell>
+                          )}
+
+                          {visibleCols["aptitude"] && (
+                            <TableCell className="text-center bg-indigo-500/5 font-bold text-xs text-indigo-600 dark:text-indigo-400">
+                              {st.assessmentName === "Not Attempted" ? (
+                                <span className="text-muted-foreground/50 font-normal">—</span>
+                              ) : (
+                                <div className="flex flex-col items-center">
+                                  <span>{st.aptitude}%</span>
+                                  <span className="text-[9px] font-normal text-muted-foreground" title={`Num: ${st.numerical}% | Verbal: ${st.verbal}% | Reasoning: ${st.reasoning}% | AdvQuant: ${st.advQuant}%`}>
+                                    N:{st.numerical}% V:{st.verbal}% R:{st.reasoning}% AQ:{st.advQuant}%
+                                  </span>
+                                </div>
+                              )}
+                            </TableCell>
+                          )}
+
+                          {visibleCols["coding"] && (
+                            <TableCell className="text-center text-xs font-medium">
+                              {st.assessmentName === "Not Attempted" ? (
+                                <span className="text-muted-foreground/50 font-normal">—</span>
+                              ) : (
+                                <span>{st.coding}%</span>
+                              )}
+                            </TableCell>
+                          )}
+
+                          {visibleCols["overall"] && (
+                            <TableCell className="text-center">
+                              {st.assessmentName === "Not Attempted" ? (
+                                <span className="text-muted-foreground/50 text-xs italic px-2 py-0.5 rounded bg-muted/60">—</span>
+                              ) : (
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-primary/10 text-primary border border-primary/20">
+                                  {st.overall}%
                                 </span>
                               )}
+                            </TableCell>
+                          )}
+
+                          <TableCell className="text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                onClick={() => openEditStudentModal(st)}
+                                className="inline-flex items-center gap-1 text-[11px] font-medium border rounded-md px-2 py-1 transition-all shadow-2xs hover:bg-muted"
+                                title="Read & Update Student Details & Scores"
+                              >
+                                <Pencil className="h-3 w-3 text-muted-foreground" />
+                                Update
+                              </button>
+
+                              <button
+                                onClick={() => openStudentProgress(st.registrationNumber || st.email || st.name)}
+                                className="inline-flex items-center gap-1 text-[11px] font-medium border rounded-md px-2 py-1 transition-all shadow-2xs"
+                                style={{ color: "#3b82f6", borderColor: `#3b82f655`, background: `#3b82f60d` }}
+                              >
+                                <TrendingUp className="h-3 w-3" />
+                                Progress
+                              </button>
                             </div>
-                          ) : (
-                            <span className="text-muted-foreground/60 italic text-[11px]">— Unlinked</span>
-                          )}
-                        </TableCell>
-
-                        <TableCell className="font-semibold text-foreground text-xs">{st.name}</TableCell>
-
-                        <TableCell className="font-mono text-xs text-muted-foreground">
-                          {st.email ? (
-                            <span className="text-foreground/90">{st.email}</span>
-                          ) : (
-                            <span className="text-muted-foreground/50 italic">—</span>
-                          )}
-                        </TableCell>
-
-                        <TableCell className="text-xs text-muted-foreground">
-                          {st.department || st.college ? (
-                            <span>{[st.department, st.college].filter(Boolean).join(" • ")}</span>
-                          ) : (
-                            <span className="text-muted-foreground/50 italic">—</span>
-                          )}
-                        </TableCell>
-
-                        <TableCell className="text-xs max-w-[180px] truncate" title={st.assessmentName}>
-                          {st.assessmentName === "Not Attempted" ? (
-                            <span className="text-muted-foreground/60 italic text-[11px]">Not Attempted</span>
-                          ) : (
-                            <span className="text-muted-foreground font-medium">{st.assessmentName}</span>
-                          )}
-                        </TableCell>
-
-                        {/* Combined Aptitude Column */}
-                        <TableCell className="text-center bg-indigo-500/5 font-bold text-xs text-indigo-600 dark:text-indigo-400">
-                          {st.assessmentName === "Not Attempted" ? (
-                            <span className="text-muted-foreground/50 font-normal">—</span>
-                          ) : (
-                            <div className="flex flex-col items-center">
-                              <span>{st.aptitude}%</span>
-                              <span className="text-[9px] font-normal text-muted-foreground" title={`Num: ${st.numerical}% | Verbal: ${st.verbal}% | Reasoning: ${st.reasoning}% | AdvQuant: ${st.advQuant}%`}>
-                                N:{st.numerical}% V:{st.verbal}% R:{st.reasoning}% AQ:{st.advQuant}%
-                              </span>
-                            </div>
-                          )}
-                        </TableCell>
-
-                        <TableCell className="text-center text-xs font-medium">
-                          {st.assessmentName === "Not Attempted" ? (
-                            <span className="text-muted-foreground/50 font-normal">—</span>
-                          ) : (
-                            <span>{st.coding}%</span>
-                          )}
-                        </TableCell>
-
-                        <TableCell className="text-center">
-                          {st.assessmentName === "Not Attempted" ? (
-                            <span className="text-muted-foreground/50 text-xs italic px-2 py-0.5 rounded bg-muted/60">—</span>
-                          ) : (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-primary/10 text-primary border border-primary/20">
-                              {st.overall}%
-                            </span>
-                          )}
-                        </TableCell>
-
-                        <TableCell className="text-center">
-                          <button
-                            onClick={() => openStudentProgress(st.registrationNumber || st.email || st.name)}
-                            className="inline-flex items-center gap-1 text-[11px] font-medium border rounded-md px-2 py-1 transition-all shadow-2xs"
-                            style={{ color: "#3b82f6", borderColor: `#3b82f655`, background: `#3b82f60d` }}
-                          >
-                            <TrendingUp className="h-3 w-3" />
-                            See Progress
-                          </button>
-                        </TableCell>
-                      </TableRow>
-                    ))
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
                   )}
                 </TableBody>
               </Table>
@@ -814,6 +1382,7 @@ export function NqtDashboard() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/50 text-xs uppercase tracking-wider font-bold">
+                    <TableHead className="font-bold text-center w-10">#</TableHead>
                     <TableHead className="font-bold">Reg Number / Student</TableHead>
                     <TableHead className="font-bold text-center">Tests Taken</TableHead>
                     <TableHead className="font-bold text-center bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">Latest Aptitude %</TableHead>
@@ -825,83 +1394,90 @@ export function NqtDashboard() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredConsolidated.length === 0 ? (
+                  {paginatedConsolidated.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
+                      <TableCell colSpan={9} className="text-center py-12 text-muted-foreground">
                         No consolidated student records available. Upload NQT reports to see student progress across tests.
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredConsolidated.map((st) => (
-                      <TableRow key={st.key} className="hover:bg-muted/30">
-                        <TableCell className="text-xs">
-                          <div className="font-bold text-foreground flex items-center gap-1.5">
-                            {st.name}
-                            {st.matchedDbStudent && (
-                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20" title="Matched to Student DB">
-                                DB Match
-                              </span>
-                            )}
-                          </div>
-                          <div className="font-mono text-[11px] text-primary">
-                            {st.registrationNumber ? st.registrationNumber : "No Reg No"}
-                            {st.email ? ` • ${st.email}` : ""}
-                          </div>
-                          {(st.department || st.college) && (
-                            <div className="text-[10px] text-muted-foreground mt-0.5">
-                              {[st.department, st.college].filter(Boolean).join(" • ")}
+                    paginatedConsolidated.map((st, idx) => {
+                      const globalIdx = ((currentPage - 1) * pageSize) + idx + 1;
+                      return (
+                        <TableRow key={st.key} className="hover:bg-muted/30">
+                          <TableCell className="text-center text-xs font-mono text-muted-foreground font-semibold">
+                            {globalIdx}
+                          </TableCell>
+
+                          <TableCell className="text-xs">
+                            <div className="font-bold text-foreground flex items-center gap-1.5">
+                              {st.name}
+                              {st.matchedDbStudent && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20" title="Matched to Student DB">
+                                  DB Match
+                                </span>
+                              )}
                             </div>
-                          )}
-                        </TableCell>
+                            <div className="font-mono text-[11px] text-primary">
+                              {st.registrationNumber ? st.registrationNumber : "No Reg No"}
+                              {st.email ? ` • ${st.email}` : ""}
+                            </div>
+                            {(st.department || st.college) && (
+                              <div className="text-[10px] text-muted-foreground mt-0.5">
+                                {[st.department, st.college].filter(Boolean).join(" • ")}
+                              </div>
+                            )}
+                          </TableCell>
 
-                        <TableCell className="text-center">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-muted border">
-                            {st.attempts.length} Test{st.attempts.length > 1 ? "s" : ""}
-                          </span>
-                        </TableCell>
+                          <TableCell className="text-center">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-muted border">
+                              {st.attempts.length} Test{st.attempts.length > 1 ? "s" : ""}
+                            </span>
+                          </TableCell>
 
-                        <TableCell className="text-center bg-indigo-500/5 font-bold text-xs text-indigo-600 dark:text-indigo-400">
-                          {st.latestAptitude}%
-                        </TableCell>
+                          <TableCell className="text-center bg-indigo-500/5 font-bold text-xs text-indigo-600 dark:text-indigo-400">
+                            {st.latestAptitude}%
+                          </TableCell>
 
-                        <TableCell className="text-center text-xs font-medium">{st.latestCoding}%</TableCell>
+                          <TableCell className="text-center text-xs font-medium">{st.latestCoding}%</TableCell>
 
-                        <TableCell className="text-center font-bold text-xs">
-                          {st.latestOverall}%
-                        </TableCell>
+                          <TableCell className="text-center font-bold text-xs">
+                            {st.latestOverall}%
+                          </TableCell>
 
-                        <TableCell className="text-center text-xs text-muted-foreground">
-                          {st.firstOverall}%
-                        </TableCell>
+                          <TableCell className="text-center text-xs text-muted-foreground">
+                            {st.firstOverall}%
+                          </TableCell>
 
-                        <TableCell className="text-center">
-                          {st.attempts.length > 1 ? (
-                            st.deltaOverall >= 0 ? (
-                              <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
-                                <ArrowUpRight className="h-3 w-3" /> +{st.deltaOverall}%
-                              </span>
+                          <TableCell className="text-center">
+                            {st.attempts.length > 1 ? (
+                              st.deltaOverall >= 0 ? (
+                                <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                                  <ArrowUpRight className="h-3 w-3" /> +{st.deltaOverall}%
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-xs font-bold bg-destructive/10 text-destructive border border-destructive/20">
+                                  <ArrowDownRight className="h-3 w-3" /> {st.deltaOverall}%
+                                </span>
+                              )
                             ) : (
-                              <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-xs font-bold bg-destructive/10 text-destructive border border-destructive/20">
-                                <ArrowDownRight className="h-3 w-3" /> {st.deltaOverall}%
-                              </span>
-                            )
-                          ) : (
-                            <span className="text-xs text-muted-foreground/60 italic">Base test</span>
-                          )}
-                        </TableCell>
+                              <span className="text-xs text-muted-foreground/60 italic">Base test</span>
+                            )}
+                          </TableCell>
 
-                        <TableCell className="text-center">
-                          <button
-                            onClick={() => openStudentProgress(st.key)}
-                            className="inline-flex items-center gap-1 text-[11px] font-semibold border rounded-md px-2.5 py-1.5 transition-all shadow-2xs"
-                            style={{ color: "#3b82f6", borderColor: `#3b82f655`, background: `#3b82f60d` }}
-                          >
-                            <TrendingUp className="h-3.5 w-3.5" />
-                            See Progress
-                          </button>
-                        </TableCell>
-                      </TableRow>
-                    ))
+                          <TableCell className="text-center">
+                            <button
+                              onClick={() => openStudentProgress(st.key)}
+                              className="inline-flex items-center gap-1 text-[11px] font-semibold border rounded-md px-2.5 py-1.5 transition-all shadow-2xs"
+                              style={{ color: "#3b82f6", borderColor: `#3b82f655`, background: `#3b82f60d` }}
+                            >
+                              <TrendingUp className="h-3.5 w-3.5" />
+                              See Progress
+                            </button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
                   )}
                 </TableBody>
               </Table>
@@ -969,6 +1545,87 @@ export function NqtDashboard() {
                   )}
                 </TableBody>
               </Table>
+            </div>
+          )}
+
+          {/* Pagination Bar */}
+          {activeTab !== "assessments" && (
+            <div className="flex items-center justify-between flex-wrap gap-2 pt-3 border-t border-border mt-3 text-xs">
+              <div className="flex items-center gap-2">
+                <p className="text-xs text-muted-foreground font-medium">
+                  Showing {activeTab === "students" ? (filteredStudents.length > 0 ? ((currentPage - 1) * pageSize) + 1 : 0) : (filteredConsolidated.length > 0 ? ((currentPage - 1) * pageSize) + 1 : 0)} - {Math.min(currentPage * pageSize, activeTab === "students" ? filteredStudents.length : filteredConsolidated.length)} of {activeTab === "students" ? filteredStudents.length : filteredConsolidated.length} entries
+                </p>
+                <Select
+                  value={String(pageSize)}
+                  onValueChange={(v) => {
+                    setPageSize(Number(v));
+                    setCurrentPage(1);
+                  }}
+                >
+                  <SelectTrigger className="h-7 w-24 text-xs font-semibold rounded-lg bg-background border">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="10">10 / page</SelectItem>
+                    <SelectItem value="25">25 / page</SelectItem>
+                    <SelectItem value="50">50 / page</SelectItem>
+                    <SelectItem value="100">100 / page</SelectItem>
+                    <SelectItem value="250">250 / page</SelectItem>
+                    <SelectItem value="500">500 / page</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 w-7 p-0 font-bold"
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(1)}
+                  title="First Page"
+                >
+                  «
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 w-7 p-0 font-bold"
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(p => p - 1)}
+                  title="Previous Page"
+                >
+                  ‹
+                </Button>
+                <div className="flex items-center gap-1 px-2 font-medium">
+                  <span className="text-xs text-muted-foreground">Page</span>
+                  <span className="text-xs font-bold text-foreground">{currentPage}</span>
+                  <span className="text-xs text-muted-foreground">of</span>
+                  <span className="text-xs font-bold text-foreground">
+                    {activeTab === "students" ? totalStudentPages : totalConsolidatedPages}
+                  </span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 w-7 p-0 font-bold"
+                  disabled={currentPage === (activeTab === "students" ? totalStudentPages : totalConsolidatedPages)}
+                  onClick={() => setCurrentPage(p => p + 1)}
+                  title="Next Page"
+                >
+                  ›
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 w-7 p-0 font-bold"
+                  disabled={currentPage === (activeTab === "students" ? totalStudentPages : totalConsolidatedPages)}
+                  onClick={() => setCurrentPage(activeTab === "students" ? totalStudentPages : totalConsolidatedPages)}
+                  title="Last Page"
+                >
+                  »
+                </Button>
+              </div>
             </div>
           )}
         </CardContent>
@@ -1182,6 +1839,143 @@ export function NqtDashboard() {
                 })}
               </div>
             </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* ── EDIT / UPDATE STUDENT & SCORES DIALOG ── */}
+      {editingStudent && (
+        <Dialog open={!!editingStudent} onOpenChange={o => { if (!o) setEditingStudent(null); }}>
+          <DialogContent className="sm:!max-w-[640px] w-[95vw] rounded-2xl border bg-card shadow-2xl p-6">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-bold flex items-center gap-2 text-foreground">
+                <Pencil className="h-5 w-5 text-primary" /> Read & Update Student Record
+              </DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground mt-1">
+                Edit student profile details and NQT assessment module scores.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-3 max-h-[70vh] overflow-y-auto pr-1">
+              <div className="space-y-3 p-3.5 rounded-xl bg-muted/30 border text-xs">
+                <p className="font-bold text-foreground text-xs border-b pb-1">Student Profile Info</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] font-semibold text-muted-foreground">Student Name</label>
+                    <Input
+                      value={editForm.name}
+                      onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
+                      className="h-8 text-xs font-semibold mt-1"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-semibold text-muted-foreground">Reg Number</label>
+                    <Input
+                      value={editForm.registrationNumber}
+                      onChange={e => setEditForm(f => ({ ...f, registrationNumber: e.target.value }))}
+                      className="h-8 text-xs font-mono font-semibold mt-1"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-semibold text-muted-foreground">Email Address</label>
+                    <Input
+                      value={editForm.email}
+                      onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))}
+                      className="h-8 text-xs font-mono mt-1"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-semibold text-muted-foreground">Department / College</label>
+                    <Input
+                      value={editForm.department}
+                      onChange={e => setEditForm(f => ({ ...f, department: e.target.value }))}
+                      className="h-8 text-xs mt-1"
+                      placeholder="e.g. CSE • SDNB"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3 p-3.5 rounded-xl bg-indigo-500/5 border border-indigo-500/20 text-xs">
+                <p className="font-bold text-indigo-600 dark:text-indigo-400 text-xs border-b border-indigo-500/20 pb-1">
+                  NQT Assessment Module Scores (%)
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-[11px] font-semibold text-muted-foreground">Numerical Ability %</label>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={editForm.numerical}
+                      onChange={e => setEditForm(f => ({ ...f, numerical: Number(e.target.value) }))}
+                      className="h-8 text-xs font-bold mt-1"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-semibold text-muted-foreground">Verbal Ability %</label>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={editForm.verbal}
+                      onChange={e => setEditForm(f => ({ ...f, verbal: Number(e.target.value) }))}
+                      className="h-8 text-xs font-bold mt-1"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-semibold text-muted-foreground">Reasoning Ability %</label>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={editForm.reasoning}
+                      onChange={e => setEditForm(f => ({ ...f, reasoning: Number(e.target.value) }))}
+                      className="h-8 text-xs font-bold mt-1"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-semibold text-muted-foreground">Adv. Quant & Reasoning %</label>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={editForm.advQuant}
+                      onChange={e => setEditForm(f => ({ ...f, advQuant: Number(e.target.value) }))}
+                      className="h-8 text-xs font-bold mt-1"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-semibold text-muted-foreground">Coding %</label>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={editForm.coding}
+                      onChange={e => setEditForm(f => ({ ...f, coding: Number(e.target.value) }))}
+                      className="h-8 text-xs font-bold mt-1"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t mt-2">
+              <Button variant="outline" size="sm" onClick={() => setEditingStudent(null)}>
+                Cancel
+              </Button>
+              <Button size="sm" onClick={handleSaveStudentEdit} className="font-semibold">
+                <Save className="h-3.5 w-3.5 mr-1" />
+                Save & Update Record
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       )}
