@@ -250,9 +250,23 @@ export function NqtDashboard() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setAssessments(getStoredNqtAssessments());
+    const local = getStoredNqtAssessments();
+    if (local && local.length > 0) {
+      setAssessments(local);
+    }
 
-    // Fetch full Hire DB student directory (510+ students)
+    // Fetch server-persisted NQT assessments from MySQL DB
+    fetch("/api/nqt")
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && Array.isArray(data.assessments) && data.assessments.length > 0) {
+          const merged = addNqtAssessments(data.assessments);
+          setAssessments(merged);
+        }
+      })
+      .catch(err => console.error("Failed to load /api/nqt data:", err));
+
+    // Fetch Hire DB student directory for profile matching (college, department, etc.)
     fetch("/api/students")
       .then(res => res.json())
       .then(data => {
@@ -312,125 +326,68 @@ export function NqtDashboard() {
 
     const consolidatedMap = new Map<string, StudentConsolidated>();
     const allRecordsList: (FpcNqtStudentResult & { assessmentName: string; assessmentId: string; uploadedAt: string })[] = [];
-    const processedKeys = new Set<string>();
 
-    // 2. Process all Hire DB students first
+    // 2. Lookup map for Hire DB students to enrich profile info (college, department, etc.)
+    const dbStudentsLookup = new Map<string, DbStudentItem>();
     dbStudents.forEach(dbSt => {
-      const emailClean = dbSt.email.toLowerCase();
-      let regClean = dbSt.registrationNumber.toLowerCase();
-      if (regClean.endsWith(".0")) regClean = regClean.slice(0, -2);
-      const nameClean = dbSt.name.toLowerCase();
-
-      const attempts = (regClean && attemptsMap.get(regClean)) ||
-                       (emailClean && attemptsMap.get(emailClean)) ||
-                       (nameClean && attemptsMap.get(nameClean)) || [];
-
-      if (regClean) processedKeys.add(regClean);
-      if (emailClean) processedKeys.add(emailClean);
-      if (nameClean) processedKeys.add(nameClean);
-
-      const studentKey = (dbSt.registrationNumber || dbSt.email || dbSt.name).toLowerCase();
-
-      if (attempts.length > 0) {
-        attempts.sort((a, b) => new Date(a.uploadedAt).getTime() - new Date(b.uploadedAt).getTime());
-        const first = attempts[0].overall;
-        const latest = attempts[attempts.length - 1].overall;
-
-        consolidatedMap.set(studentKey, {
-          key: studentKey,
-          registrationNumber: dbSt.registrationNumber,
-          name: dbSt.name,
-          email: dbSt.email,
-          department: dbSt.department,
-          college: dbSt.college,
-          attempts,
-          firstOverall: first,
-          latestOverall: latest,
-          latestAptitude: attempts[attempts.length - 1].aptitude,
-          latestCoding: attempts[attempts.length - 1].coding,
-          deltaOverall: Math.round((latest - first) * 100) / 100,
-          matchedDbStudent: true,
-        });
-
-        attempts.forEach(att => {
-          allRecordsList.push({
-            ...att,
-            registrationNumber: dbSt.registrationNumber || att.registrationNumber || "",
-            email: dbSt.email || att.email || "",
-            name: dbSt.name || att.name || "",
-            department: dbSt.department || att.department || "",
-            college: dbSt.college || att.college || "",
-            matchedDbStudent: true,
-          });
-        });
-      } else {
-        // Hire DB student without NQT attempts yet
-        consolidatedMap.set(studentKey, {
-          key: studentKey,
-          registrationNumber: dbSt.registrationNumber,
-          name: dbSt.name,
-          email: dbSt.email,
-          department: dbSt.department,
-          college: dbSt.college,
-          attempts: [],
-          firstOverall: 0,
-          latestOverall: 0,
-          latestAptitude: 0,
-          latestCoding: 0,
-          deltaOverall: 0,
-          matchedDbStudent: true,
-        });
-
-        allRecordsList.push({
-          registrationNumber: dbSt.registrationNumber,
-          name: dbSt.name,
-          email: dbSt.email,
-          department: dbSt.department,
-          college: dbSt.college,
-          numerical: 0,
-          verbal: 0,
-          reasoning: 0,
-          aptitude: 0,
-          advQuant: 0,
-          coding: 0,
-          overall: 0,
-          matchedDbStudent: true,
-          assessmentName: "Not Attempted",
-          assessmentId: `unattempted-${dbSt.registrationNumber || dbSt.email}`,
-          uploadedAt: "",
-        });
+      if (dbSt.registrationNumber) {
+        let r = dbSt.registrationNumber.toLowerCase();
+        if (r.endsWith(".0")) r = r.slice(0, -2);
+        dbStudentsLookup.set(r, dbSt);
+      }
+      if (dbSt.email) {
+        dbStudentsLookup.set(dbSt.email.toLowerCase(), dbSt);
+      }
+      if (dbSt.name) {
+        dbStudentsLookup.set(dbSt.name.toLowerCase(), dbSt);
       }
     });
 
-    // 3. Add remaining NQT upload students that are not in Hire DB
-    attemptsMap.forEach((attempts, k) => {
-      if (processedKeys.has(k)) return;
+    // 3. Process ONLY students who have actual uploaded NQT test attempts
+    attemptsMap.forEach((attempts, studentKey) => {
+      if (!attempts || attempts.length === 0) return;
 
-      const firstSt = attempts[0];
       attempts.sort((a, b) => new Date(a.uploadedAt).getTime() - new Date(b.uploadedAt).getTime());
-      const first = attempts[0].overall;
-      const latest = attempts[attempts.length - 1].overall;
+      const firstSt = attempts[0];
+      const latestSt = attempts[attempts.length - 1];
 
-      consolidatedMap.set(k, {
-        key: k,
-        registrationNumber: firstSt.registrationNumber || "",
-        name: firstSt.name || "Unknown Student",
-        email: firstSt.email || "",
-        department: firstSt.department || "",
-        college: firstSt.college || "",
+      let regClean = String(latestSt.registrationNumber || "").trim().toLowerCase();
+      if (regClean.endsWith(".0")) regClean = regClean.slice(0, -2);
+      const emailClean = String(latestSt.email || "").trim().toLowerCase();
+      const nameClean = String(latestSt.name || "").trim().toLowerCase();
+
+      const matchedDb = (regClean ? dbStudentsLookup.get(regClean) : undefined) || 
+                        (emailClean ? dbStudentsLookup.get(emailClean) : undefined) ||
+                        (nameClean ? dbStudentsLookup.get(nameClean) : undefined);
+
+      const firstOverall = firstSt.overall;
+      const latestOverall = latestSt.overall;
+
+      consolidatedMap.set(studentKey, {
+        key: studentKey,
+        registrationNumber: matchedDb?.registrationNumber || latestSt.registrationNumber || "",
+        name: matchedDb?.name || latestSt.name || "Unknown Student",
+        email: matchedDb?.email || latestSt.email || "",
+        department: matchedDb?.department || latestSt.department || "",
+        college: matchedDb?.college || latestSt.college || "",
         attempts,
-        firstOverall: first,
-        latestOverall: latest,
-        latestAptitude: attempts[attempts.length - 1].aptitude,
-        latestCoding: attempts[attempts.length - 1].coding,
-        deltaOverall: Math.round((latest - first) * 100) / 100,
-        matchedDbStudent: false,
+        firstOverall,
+        latestOverall,
+        latestAptitude: latestSt.aptitude,
+        latestCoding: latestSt.coding,
+        deltaOverall: Math.round((latestOverall - firstOverall) * 100) / 100,
+        matchedDbStudent: !!matchedDb,
       });
 
       attempts.forEach(att => {
         allRecordsList.push({
           ...att,
-          matchedDbStudent: false,
+          registrationNumber: matchedDb?.registrationNumber || att.registrationNumber || "",
+          email: matchedDb?.email || att.email || "",
+          name: matchedDb?.name || att.name || "",
+          department: matchedDb?.department || att.department || "",
+          college: matchedDb?.college || att.college || "",
+          matchedDbStudent: !!matchedDb,
         });
       });
     });

@@ -1,6 +1,6 @@
 /**
  * ==============================================================================
- * HIRE & NQT SCORE GOOGLE APPS SCRIPT (STRICT ISOLATED MODES + SCREENSHOT UI)
+ * HIRE & NQT SCORE GOOGLE APPS SCRIPT (CLEAN SINGLE-HEADER & NO DUPLICATE COLS)
  * API Endpoint: https://hire-score-fawn.vercel.app/api/scores/{regNo}
  * 
  * Target Sheets (12 Placement Eligibility Sheets):
@@ -23,7 +23,7 @@ const TARGET_SHEETS = [
   "TJS PLACEMENT ELIGIBILITY STUDENTS DATA"
 ];
 
-// Custom toolbar menu with separate, strictly isolated options
+// Custom toolbar menu
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu("🚀 HIRE & NQT Score Tools")
@@ -36,7 +36,7 @@ function onOpen() {
     .addItem("🎯 Auto-Fill Current Sheet (HIRE Only)", "autoFillCurrentSheetHireOnly")
     .addItem("📊 Auto-Fill Current Sheet (NQT Only)", "autoFillCurrentSheetNqtOnly")
     .addSeparator()
-    .addItem("🎨 Format Sheet Headers (Green Screenshot Layout)", "formatSheetHeadersCurrent")
+    .addItem("🎨 Fix & Format Sheet Headers (Clean Layout)", "formatSheetHeadersCurrent")
     .addItem("🔍 Inspect Sheet Headers & Mappings", "inspectHeaders")
     .addToUi();
 }
@@ -50,7 +50,6 @@ function autoFillAllPlacementSheets() {
 
 /**
  * Mode 2: Auto-fills HIRE Scores ONLY (Total Hire Score, FOP, DSA, Aptitude)
- * DOES NOT TOUCH NQT COLUMNS AT ALL.
  */
 function autoFillHireScoresOnly() {
   runBatchAutoFill("HIRE_ONLY", "🎯 Starting HIRE Scores ONLY Real-Time Sync across all sheets...");
@@ -58,7 +57,6 @@ function autoFillHireScoresOnly() {
 
 /**
  * Mode 3: Auto-fills FPC NQT Assessment Scores ONLY
- * DOES NOT TOUCH HIRE COLUMNS AT ALL.
  */
 function autoFillNqtScoresOnly() {
   runBatchAutoFill("NQT_ONLY", "📊 Starting NQT Scores ONLY Real-Time Sync across all sheets...");
@@ -126,12 +124,12 @@ function runCurrentSheetAutoFill(mode) {
 }
 
 /**
- * Format active sheet headers matching screenshot green design
+ * Format active sheet headers matching clean screenshot design
  */
 function formatSheetHeadersCurrent() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   formatSheetHeaders(sheet);
-  SpreadsheetApp.getUi().alert("🎨 Headers formatted successfully matching screenshot layout on sheet: " + sheet.getName());
+  SpreadsheetApp.getUi().alert("🎨 Headers cleaned and formatted successfully on sheet: " + sheet.getName());
 }
 
 /**
@@ -155,15 +153,26 @@ function processPlacementSheet(sheet, ss, mode) {
   const regColIdx = regInfo.colIdx;
 
   // 2. Read Line 6 & Line 7 Headers for score columns (clean whitespace & newlines)
-  const row6 = sheet.getRange(6, 1, 1, lastCol).getValues()[0].map(v => String(v || "").replace(/[\r\n]+/g, " ").trim());
-  const row7 = sheet.getRange(7, 1, 1, lastCol).getValues()[0].map(v => String(v || "").replace(/[\r\n]+/g, " ").trim());
-  const combinedHeaders = row7.map((h7, idx) => (row6[idx] ? (row6[idx] + " " + h7) : h7));
+  const row6Raw = sheet.getRange(6, 1, 1, lastCol).getValues()[0].map(v => String(v || "").replace(/[\r\n]+/g, " ").trim());
+  const row7Raw = sheet.getRange(7, 1, 1, lastCol).getValues()[0].map(v => String(v || "").replace(/[\r\n]+/g, " ").trim());
+
+  // Search headers across both Row 6 and Row 7
+  const combinedHeaders = row7Raw.map((h7, idx) => (row6Raw[idx] ? (row6Raw[idx] + " " + h7) : h7));
 
   // Column Index Locators
-  let colHireScore = findColumnIndex(combinedHeaders, ["total hire score", "hire score", "hire_score"]);
-  const colFop = findColumnIndex(combinedHeaders, ["fop(%)", "fop"]);
-  const colDsa = findColumnIndex(combinedHeaders, ["dsa(%)", "dsa"]);
-  const colApt = findColumnIndex(combinedHeaders, ["aptitude(%)", "aptitude", "apt"]);
+  let colHireScore = findColumnIndex(row7Raw, ["total hire score", "hire score", "hire_score", "out of 1000"]);
+  if (colHireScore === -1) {
+    colHireScore = findColumnIndex(combinedHeaders, ["total hire score", "hire score", "hire_score", "out of 1000"]);
+  }
+
+  let colFop = findColumnIndex(row7Raw, ["fop(%)", "fop"]);
+  if (colFop === -1) colFop = findColumnIndex(combinedHeaders, ["fop(%)", "fop"]);
+
+  let colDsa = findColumnIndex(row7Raw, ["dsa(%)", "dsa"]);
+  if (colDsa === -1) colDsa = findColumnIndex(combinedHeaders, ["dsa(%)", "dsa"]);
+
+  let colApt = findColumnIndex(row7Raw, ["aptitude(%)", "aptitude"]);
+  if (colApt === -1) colApt = findColumnIndex(combinedHeaders, ["aptitude(%)", "aptitude"]);
 
   const colNoOfAssess = findColumnIndex(combinedHeaders, ["no.of. assessment", "no of assessment", "assessment conducted"]);
   const colNumerical = findColumnIndex(combinedHeaders, ["numerical ability( percentage)", "numerical ability", "numerical"]);
@@ -174,54 +183,38 @@ function processPlacementSheet(sheet, ss, mode) {
   const colCodingAvg = findColumnIndex(combinedHeaders, ["coding (average percentage)", "coding (average", "coding average", "coding avg"]);
   const colOverallAvg = findColumnIndex(combinedHeaders, ["overall (average percentage)", "overall (average", "overall average", "overall avg"]);
 
-  // Auto-Create Column Y for TOTAL HIRE SCORE if missing
+  // Auto-Create Column for TOTAL HIRE SCORE ONLY IF NOT FOUND ANYWHERE
   if (colHireScore === -1 && isHireMode) {
     let insertAfterIdx = -1;
-    if (colNoOfAssess !== -1) {
+    if (colApt !== -1) {
+      insertAfterIdx = colApt;
+    } else if (colDsa !== -1) {
+      insertAfterIdx = colDsa;
+    } else if (colFop !== -1) {
+      insertAfterIdx = colFop;
+    } else if (colNoOfAssess !== -1) {
       insertAfterIdx = colNoOfAssess - 1;
     } else {
-      for (let c = 0; c < combinedHeaders.length; c++) {
-        if (combinedHeaders[c].toLowerCase().includes("average percentage")) {
-          insertAfterIdx = c;
-        }
-      }
-      if (insertAfterIdx === -1) {
-        insertAfterIdx = colApt !== -1 ? colApt : (colDsa !== -1 ? colDsa : (colFop !== -1 ? colFop : lastCol - 1));
-      }
+      insertAfterIdx = lastCol - 1;
     }
 
-    if (insertAfterIdx >= 0) {
-      sheet.insertColumnAfter(insertAfterIdx + 1);
-      colHireScore = insertAfterIdx + 1;
-    } else {
-      sheet.insertColumnAfter(lastCol);
-      colHireScore = lastCol;
-    }
-
+    sheet.insertColumnAfter(insertAfterIdx + 1);
+    colHireScore = insertAfterIdx + 1;
     lastCol = sheet.getLastColumn();
-    sheet.getRange(6, colHireScore + 1).setValue("HIRE Assessment Score (Latest Month)");
+
+    // Set Row 6 and Row 7 specifically for TOTAL HIRE SCORE column
+    sheet.getRange(6, colHireScore + 1).setValue("TOTAL HIRE SCORE(OUT OF 1000)");
     sheet.getRange(7, colHireScore + 1).setValue("TOTAL HIRE SCORE(OUT OF 1000)");
 
     try {
-      const sampleCol = (colApt !== -1 ? colApt : (colDsa !== -1 ? colDsa : (colFop !== -1 ? colFop : 0))) + 1;
-      const targetHeaderRow7 = sheet.getRange(7, colHireScore + 1);
-      const srcHeaderRow7 = sheet.getRange(7, sampleCol);
-      targetHeaderRow7.setBackground(srcHeaderRow7.getBackground());
-      targetHeaderRow7.setFontColor(srcHeaderRow7.getFontColor());
-      targetHeaderRow7.setFontWeight("bold");
-      targetHeaderRow7.setHorizontalAlignment("center");
-      targetHeaderRow7.setVerticalAlignment("middle");
-      targetHeaderRow7.setWrap(true);
-
-      const targetHeaderRow6 = sheet.getRange(6, colHireScore + 1);
-      const srcHeaderRow6 = sheet.getRange(6, sampleCol);
-      targetHeaderRow6.setBackground(srcHeaderRow6.getBackground());
-      targetHeaderRow6.setFontColor(srcHeaderRow6.getFontColor());
-      targetHeaderRow6.setFontWeight("bold");
-      targetHeaderRow6.setHorizontalAlignment("center");
-      targetHeaderRow6.setVerticalAlignment("middle");
+      const targetHeader = sheet.getRange(6, colHireScore + 1, 2, 1);
+      targetHeader.setBackground("#a2c4c9");
+      targetHeader.setFontWeight("bold");
+      targetHeader.setHorizontalAlignment("center");
+      targetHeader.setVerticalAlignment("middle");
+      targetHeader.setWrap(true);
     } catch (err) {
-      Logger.log("Styling copy warning: " + err.message);
+      Logger.log("Styling warning: " + err.message);
     }
   }
 
@@ -349,21 +342,79 @@ function flushBuffersToSheet(sheet, startRow, numRows, buf) {
 }
 
 /**
- * Format headers on sheet matching screenshot green theme
+ * Cleanly unmerges and re-formats Row 6 and Row 7 to guarantee NO duplicate headers!
  */
 function formatSheetHeaders(sheet) {
   const lastCol = sheet.getLastColumn();
-  if (lastCol === 0) return;
+  if (sheet.getLastRow() < 7 || lastCol === 0) return;
 
-  const GREEN_BG = "#a2c4c9"; // Green header background from screenshot
+  const GREEN_BG = "#a2c4c9";
 
-  const row6 = sheet.getRange(6, 1, 1, lastCol);
-  const row7 = sheet.getRange(7, 1, 1, lastCol);
+  // Unmerge Row 6 & 7 across sheet to reset duplicate merged cells
+  try {
+    sheet.getRange(6, 1, 2, lastCol).breakApart();
+  } catch (e) {
+    Logger.log("Break apart note: " + e);
+  }
 
-  row6.setFontWeight("bold").setHorizontalAlignment("center").setVerticalAlignment("middle").setBackground(GREEN_BG);
-  row7.setFontWeight("bold").setHorizontalAlignment("center").setVerticalAlignment("middle").setWrap(true).setBackground(GREEN_BG);
+  const row7Values = sheet.getRange(7, 1, 1, lastCol).getValues()[0].map(v => String(v || "").toLowerCase().trim());
 
-  sheet.getRange(6, 1, 2, lastCol).setBorder(true, true, true, true, true, true, "#333333", SpreadsheetApp.BorderStyle.SOLID);
+  let fopColIdx = -1;
+  for (let c = 0; c < lastCol; c++) {
+    if (row7Values[c].includes("fop")) {
+      fopColIdx = c;
+      break;
+    }
+  }
+
+  if (fopColIdx !== -1 && fopColIdx + 3 < lastCol) {
+    // 1. Merge Row 6 over FOP, DSA, Aptitude (ONLY 3 columns)
+    const hireHeaderRange = sheet.getRange(6, fopColIdx + 1, 1, 3);
+    hireHeaderRange.merge();
+    hireHeaderRange.setValue("HIRE Assessment Score (Latest Month)");
+
+    sheet.getRange(7, fopColIdx + 1).setValue("FOP(%)");
+    sheet.getRange(7, fopColIdx + 2).setValue("DSA(%)");
+    sheet.getRange(7, fopColIdx + 3).setValue("Aptitude(%)");
+
+    // 2. Set TOTAL HIRE SCORE column (fopColIdx + 4)
+    const hireScoreColIdx = fopColIdx + 4;
+    const scoreRange = sheet.getRange(6, hireScoreColIdx, 2, 1);
+    scoreRange.merge();
+    scoreRange.setValue("TOTAL HIRE SCORE(OUT OF 1000)");
+
+    // 3. Set FPC NQT Assessment Header over next 8 columns
+    const nqtStartCol = hireScoreColIdx + 1;
+    if (nqtStartCol + 7 <= lastCol) {
+      const nqtHeaderRange = sheet.getRange(6, nqtStartCol, 1, 8);
+      nqtHeaderRange.merge();
+      nqtHeaderRange.setValue("FPC NQT Assessment");
+
+      const nqtHeaders = [
+        "No.Of. Assessment Conducted",
+        "Numerical Ability( Percentage)",
+        "Verbal Ability( Percentage)",
+        "Reasoning Ability( Percentage)",
+        "Advanced Quantitative and Reasoning Ability( Percentage)",
+        "Aptitude Average %",
+        "Coding (Average Percentage)",
+        "Overall (Average Percentage)"
+      ];
+
+      for (let k = 0; k < 8; k++) {
+        sheet.getRange(7, nqtStartCol + k).setValue(nqtHeaders[k]);
+      }
+
+      // Format all 12 columns cleanly
+      const totalHeaderRange = sheet.getRange(6, fopColIdx + 1, 2, 12);
+      totalHeaderRange.setBackground(GREEN_BG);
+      totalHeaderRange.setFontWeight("bold");
+      totalHeaderRange.setHorizontalAlignment("center");
+      totalHeaderRange.setVerticalAlignment("middle");
+      totalHeaderRange.setWrap(true);
+      totalHeaderRange.setBorder(true, true, true, true, true, true, "#333333", SpreadsheetApp.BorderStyle.SOLID);
+    }
+  }
 }
 
 function inspectHeaders() {
@@ -381,10 +432,10 @@ function inspectHeaders() {
   const row7 = sheet.getRange(7, 1, 1, lastCol).getValues()[0].map(v => String(v || "").replace(/[\r\n]+/g, " ").trim());
   const combined = row7.map((h7, idx) => (row6[idx] ? (row6[idx] + " " + h7) : h7));
 
-  const colHireScore = findColumnIndex(combined, ["total hire score", "hire score", "hire_score"]);
-  const colFop = findColumnIndex(combined, ["fop(%)", "fop"]);
-  const colDsa = findColumnIndex(combined, ["dsa(%)", "dsa"]);
-  const colApt = findColumnIndex(combined, ["aptitude(%)", "aptitude", "apt"]);
+  const colHireScore = findColumnIndex(row7, ["total hire score", "hire score", "hire_score", "out of 1000"]);
+  const colFop = findColumnIndex(row7, ["fop(%)", "fop"]);
+  const colDsa = findColumnIndex(row7, ["dsa(%)", "dsa"]);
+  const colApt = findColumnIndex(row7, ["aptitude(%)", "aptitude"]);
 
   const colNoOfAssess = findColumnIndex(combined, ["no.of. assessment", "no of assessment", "assessment conducted"]);
   const colNumerical = findColumnIndex(combined, ["numerical ability( percentage)", "numerical ability", "numerical"]);
