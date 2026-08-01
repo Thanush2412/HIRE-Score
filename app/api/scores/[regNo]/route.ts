@@ -57,7 +57,7 @@ function formatScoresResponse(student: any) {
   const numericalPct = quants.percentage;
   const verbalPct = verbal.percentage;
   const reasoningPct = logical.percentage;
-  const advQuantPct = quants.percentage;
+  const advQuantPct = fop.percentage;
   const aptitudeAvgPct = Math.round(((numericalPct + verbalPct + reasoningPct + advQuantPct) / 4) * 100) / 100;
   const codingAvgPct = dsa.percentage;
   const overallAvgPct = Math.round(((aptitudeAvgPct + codingAvgPct) / 2) * 100) / 100;

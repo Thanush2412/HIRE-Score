@@ -66,59 +66,11 @@ export async function GET(req: NextRequest) {
       });
     });
 
-    // 3. Match Hire DB records for metadata & include students with non-zero NQT scores in DB
-    const pool = getPool();
+    // 3. Match Hire DB records ONLY for students present in uploaded NQT files
     const dbStudentsMap = new Map<string, any>();
 
-    try {
-      const [dbScoreRows] = await pool.query(`
-        SELECT registrationNumber, name, email, department, college, quants, logical, verbal, fopAssessment, dsaAssessment, hireScore
-        FROM student_full_view
-        WHERE (quants > 0 OR logical > 0 OR verbal > 0 OR fopAssessment > 0 OR dsaAssessment > 0)
-      `);
-
-      (dbScoreRows as any[]).forEach(s => {
-        let regClean = String(s.registrationNumber || "").trim();
-        if (regClean.endsWith(".0")) regClean = regClean.slice(0, -2);
-        const emailClean = String(s.email || "").trim().toLowerCase();
-        const nameClean = String(s.name || "").trim().toLowerCase();
-
-        const key = regClean.toLowerCase() || emailClean || nameClean;
-        if (!key) return;
-
-        if (regClean) dbStudentsMap.set(regClean.toLowerCase(), s);
-        if (emailClean) dbStudentsMap.set(emailClean, s);
-
-        if (!attemptsMap.has(key)) {
-          const num = Number(s.quants || 0);
-          const verb = Number(s.verbal || 0);
-          const reas = Number(s.logical || 0);
-          const adv = Number(s.fopAssessment || 0);
-          const apt = Math.round(((num + verb + reas + adv) / 4) * 100) / 100;
-          const coding = Number(s.dsaAssessment || 0);
-          const overall = Math.round(((apt + coding) / 2) * 100) / 100;
-
-          attemptsMap.set(key, [{
-            registrationNumber: s.registrationNumber || "",
-            name: s.name || "",
-            email: s.email || "",
-            department: s.department || "",
-            college: s.college || "",
-            numerical: num,
-            verbal: verb,
-            reasoning: reas,
-            advQuant: adv,
-            aptitude: apt,
-            coding: coding,
-            overall: overall,
-            assessmentName: "FACE NQT Assessment (Recorded)",
-            assessmentId: `db-${s.registrationNumber || s.email}`,
-            uploadedAt: new Date().toISOString(),
-          }]);
-        }
-      });
-
-      if (allRegNos.size > 0) {
+    if (allRegNos.size > 0) {
+      try {
         const matchedDbStudents = await getStudentsByRegNos(Array.from(allRegNos));
         matchedDbStudents.forEach(s => {
           if (s.registrationNumber) {
@@ -128,9 +80,9 @@ export async function GET(req: NextRequest) {
             dbStudentsMap.set(s.email.trim().toLowerCase(), s);
           }
         });
+      } catch (e) {
+        console.warn("Could not match DB students metadata for NQT:", e);
       }
-    } catch (e) {
-      console.warn("Could not match DB students metadata for NQT:", e);
     }
 
     // 4. Consolidate NQT student records
