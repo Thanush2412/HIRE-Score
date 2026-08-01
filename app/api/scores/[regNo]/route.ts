@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getStudentByRegistrationNumber } from "@/lib/db";
+import { getStudentByRegistrationNumber, getAllNqtAssessmentsFromDb } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -24,11 +24,9 @@ function normalizeComponentScore(val: unknown, max: number) {
   let percentage: number;
 
   if (raw > max) {
-    // Value provided as percentage (e.g. 80% for FOP)
     percentage = Math.min(raw, 100);
     scoreOutOfMax = Math.round(((percentage / 100) * max) * 100) / 100;
   } else {
-    // Value provided as raw score out of max denominator (e.g. 60 out of 75)
     scoreOutOfMax = Math.min(raw, max);
     percentage = max > 0 ? Math.round(((scoreOutOfMax / max) * 100) * 100) / 100 : 0;
   }
@@ -42,7 +40,7 @@ function normalizeComponentScore(val: unknown, max: number) {
   };
 }
 
-function formatScoresResponse(student: any) {
+function formatScoresResponse(student: any, nqtUploadMatch: any | null) {
   const fop = normalizeComponentScore(student.fopAssessment, MAX_DENOMINATORS.fopAssessment);
   const dsa = normalizeComponentScore(student.dsaAssessment, MAX_DENOMINATORS.dsaAssessment);
   const quants = normalizeComponentScore(student.quants, MAX_DENOMINATORS.quants);
@@ -53,39 +51,59 @@ function formatScoresResponse(student: any) {
   const aptitudeTotal = normalizeComponentScore(aptRawTotal, MAX_DENOMINATORS.aptitudeTotal);
   const hireScore = Math.round(Number(student.hireScore ?? 0));
 
-  // FPC NQT Assessment module percentage calculation
-  const numericalPct = quants.percentage;
-  const verbalPct = verbal.percentage;
-  const reasoningPct = logical.percentage;
-  const advQuantPct = fop.percentage;
-  const aptitudeAvgPct = Math.round(((numericalPct + verbalPct + reasoningPct + advQuantPct) / 4) * 100) / 100;
-  const codingAvgPct = dsa.percentage;
-  const overallAvgPct = Math.round(((aptitudeAvgPct + codingAvgPct) / 2) * 100) / 100;
-  const noOfAssessments = Number(student.noOfAssessmentsConducted ?? 1);
+  let fpcNqtAssessment: any = null;
+  let noOfAssessments = 0;
+  let numericalPct = 0;
+  let verbalPct = 0;
+  let reasoningPct = 0;
+  let advQuantPct = 0;
+  let aptitudeAvgPct = 0;
+  let codingAvgPct = 0;
+  let overallAvgPct = 0;
 
-  const fpcNqtAssessment = {
-    tableHeader: "FPC NQT Assessment",
-    noOfAssessmentConducted: noOfAssessments,
-    numericalAbilityPercentage: numericalPct,
-    verbalAbilityPercentage: verbalPct,
-    reasoningAbilityPercentage: reasoningPct,
-    advancedQuantitativeAndReasoningAbilityPercentage: advQuantPct,
-    aptitudeAveragePercentage: aptitudeAvgPct,
-    codingAveragePercentage: codingAvgPct,
-    overallAveragePercentage: overallAvgPct,
+  // Populate NQT fields ONLY if student exists in an uploaded NQT assessment file
+  if (nqtUploadMatch) {
+    noOfAssessments = Number(nqtUploadMatch.assessmentsConducted ?? 1);
+    numericalPct = Number(nqtUploadMatch.numerical || 0);
+    verbalPct = Number(nqtUploadMatch.verbal || 0);
+    reasoningPct = Number(nqtUploadMatch.reasoning || 0);
+    advQuantPct = Number(nqtUploadMatch.advQuant || 0);
+    
+    aptitudeAvgPct = nqtUploadMatch.aptitude !== undefined && nqtUploadMatch.aptitude !== null 
+      ? Number(nqtUploadMatch.aptitude) 
+      : Math.round(((numericalPct + verbalPct + reasoningPct + advQuantPct) / 4) * 100) / 100;
+      
+    codingAvgPct = Number(nqtUploadMatch.coding || 0);
+    
+    overallAvgPct = nqtUploadMatch.overall !== undefined && nqtUploadMatch.overall !== null 
+      ? Number(nqtUploadMatch.overall) 
+      : Math.round(((aptitudeAvgPct + codingAvgPct) / 2) * 100) / 100;
 
-    // Header mappings matching exact spreadsheet column headers
-    headers: {
-      "No.Of. Assessment Conducted": noOfAssessments,
-      "Numerical Ability( Percentage)": numericalPct,
-      "Verbal Ability( Percentage)": verbalPct,
-      "Reasoning Ability( Percentage)": reasoningPct,
-      "Advanced Quantitative and Reasoning Ability( Percentage)": advQuantPct,
-      "Aptitude Average %": aptitudeAvgPct,
-      "Coding (Average Percentage)": codingAvgPct,
-      "Overall (Average Percentage)": overallAvgPct,
-    }
-  };
+    fpcNqtAssessment = {
+      tableHeader: "FPC NQT Assessment",
+      hasNqtData: true,
+      noOfAssessmentConducted: noOfAssessments,
+      numericalAbilityPercentage: numericalPct,
+      verbalAbilityPercentage: verbalPct,
+      reasoningAbilityPercentage: reasoningPct,
+      advancedQuantitativeAndReasoningAbilityPercentage: advQuantPct,
+      aptitudeAveragePercentage: aptitudeAvgPct,
+      codingAveragePercentage: codingAvgPct,
+      overallAveragePercentage: overallAvgPct,
+
+      // Header mappings matching exact spreadsheet column headers
+      headers: {
+        "No.Of. Assessment Conducted": noOfAssessments,
+        "Numerical Ability( Percentage)": numericalPct,
+        "Verbal Ability( Percentage)": verbalPct,
+        "Reasoning Ability( Percentage)": reasoningPct,
+        "Advanced Quantitative and Reasoning Ability( Percentage)": advQuantPct,
+        "Aptitude Average %": aptitudeAvgPct,
+        "Coding (Average Percentage)": codingAvgPct,
+        "Overall (Average Percentage)": overallAvgPct,
+      }
+    };
+  }
 
   return {
     registrationNumber: student.registrationNumber,
@@ -95,7 +113,7 @@ function formatScoresResponse(student: any) {
     year: student.year || null,
     hireScore: hireScore, // Total Hire Score out of 1000
 
-    // FPC NQT Assessment Module Data & Exact Spreadsheet Headers
+    // FPC NQT Assessment Module Data (populated ONLY for uploaded NQT test students)
     fpcNqtAssessment,
     "No.Of. Assessment Conducted": noOfAssessments,
     "Numerical Ability( Percentage)": numericalPct,
@@ -174,9 +192,39 @@ export async function GET(
       );
     }
 
-    return NextResponse.json(formatScoresResponse(student));
+    // Check if student belongs to an actual uploaded NQT assessment file
+    let nqtMatch: any = null;
+    try {
+      const savedAssessments = await getAllNqtAssessmentsFromDb();
+      let targetReg = student.registrationNumber ? student.registrationNumber.trim().toLowerCase() : "";
+      if (targetReg.endsWith(".0")) targetReg = targetReg.slice(0, -2);
+      const targetEmail = (student.email || "").trim().toLowerCase();
+
+      for (const ass of savedAssessments) {
+        if (Array.isArray(ass.students)) {
+          const found = ass.students.find((st: any) => {
+            let reg = String(st.registrationNumber || "").trim().toLowerCase();
+            if (reg.endsWith(".0")) reg = reg.slice(0, -2);
+            let email = String(st.email || "").trim().toLowerCase();
+            return (targetReg && reg === targetReg) || (targetEmail && email === targetEmail);
+          });
+          if (found) {
+            nqtMatch = {
+              ...found,
+              assessmentsConducted: ass.assessmentsConducted || ass.noOfAssessmentConducted || 1
+            };
+            break;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Failed checking uploaded NQT assessment match:", err);
+    }
+
+    return NextResponse.json(formatScoresResponse(student, nqtMatch));
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }
 }
+
 
