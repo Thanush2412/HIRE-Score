@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import { FpcNqtAssessment, FpcNqtSummary, FpcNqtStudentResult } from "./nqt-types";
+import { cleanRegNo } from "./excel-utils";
 
 function parseNum(val: unknown): number {
   if (val === null || val === undefined || val === "") return 0;
@@ -103,7 +104,8 @@ export function parseFpcNqtExcel(buffer: ArrayBuffer, filename: string = "FPC NQ
     const reasoning = colReasoning !== -1 ? parseNum(row[colReasoning]) : 0;
     const advQuant = colAdvQuant !== -1 ? parseNum(row[colAdvQuant]) : 0;
     const coding = colCoding !== -1 ? parseNum(row[colCoding]) : 0;
-    const aptitudeAvg = Math.round(((num + verbal + reasoning + advQuant) / 4) * 100) / 100;
+    const validAptScores = [num, verbal, reasoning, advQuant].filter(s => s > 0);
+    const aptitudeAvg = validAptScores.length > 0 ? Math.round((validAptScores.reduce((a, b) => a + b, 0) / validAptScores.length) * 100) / 100 : 0;
 
     let overall = colOverall !== -1 ? parseNum(row[colOverall]) : 0;
     if (overall === 0 && (num > 0 || verbal > 0 || reasoning > 0 || advQuant > 0 || coding > 0)) {
@@ -213,7 +215,7 @@ function parseMultiLevelFaceNqtReport(rows: unknown[][], filename: string): FpcN
     if (!name || name.toLowerCase().includes("name") || name.toLowerCase().includes("total")) continue;
 
     const email = colEmail !== -1 ? String(row[colEmail] || "").trim() : "";
-    const regNo = colRegNo !== -1 ? String(row[colRegNo] || "").trim() : "";
+    const regNo = colRegNo !== -1 ? cleanRegNo(row[colRegNo]) : "";
 
     const numerical = parseNum(row[colNumPct]);
     const verbal = parseNum(row[colVerbalPct]);
@@ -227,7 +229,8 @@ function parseMultiLevelFaceNqtReport(rows: unknown[][], filename: string): FpcN
       overall = valid.length > 0 ? Math.round((valid.reduce((a, b) => a + b, 0) / valid.length) * 100) / 100 : 0;
     }
 
-    const aptitude = Math.round(((numerical + verbal + reasoning + advQuant) / 4) * 100) / 100;
+    const validApt = [numerical, verbal, reasoning, advQuant].filter(v => v > 0);
+    const aptitude = validApt.length > 0 ? Math.round((validApt.reduce((a, b) => a + b, 0) / validApt.length) * 100) / 100 : 0;
 
     studentRows.push({
       registrationNumber: regNo,
@@ -256,7 +259,8 @@ function parseMultiLevelFaceNqtReport(rows: unknown[][], filename: string): FpcN
   const verbalAvg = calcAvg(r => r.verbal);
   const reasoningAvg = calcAvg(r => r.reasoning);
   const advQuantAvg = calcAvg(r => r.advQuant);
-  const aptitudeAvg = Math.round(((numAvg + verbalAvg + reasoningAvg + advQuantAvg) / 4) * 100) / 100;
+  const validAvgs = [numAvg, verbalAvg, reasoningAvg, advQuantAvg].filter(v => v > 0);
+  const aptitudeAvg = validAvgs.length > 0 ? Math.round((validAvgs.reduce((a, b) => a + b, 0) / validAvgs.length) * 100) / 100 : 0;
 
   return [{
     id: `nqt-${Date.now()}-face`,

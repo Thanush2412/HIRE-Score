@@ -12,7 +12,7 @@ import { FpcNqtAssessment, FpcNqtStudentResult } from "@/lib/nqt-types";
 
 const NQT_FIELDS = [
   { key: "registrationNumber", label: "Reg. Number",              primaryKey: true,  headerMatches: ["reg", "registration", "roll", "usn", "register", "student id"] },
-  { key: "email",              label: "Email Address",           primaryKey: true,  headerMatches: ["email", "candidate details", "mail"] },
+  { key: "email",              label: "Email Address",           primaryKey: false, headerMatches: ["email", "candidate details", "mail"] },
   { key: "name",               label: "Student Name",            primaryKey: false, headerMatches: ["name", "candidate name", "student name"] },
   { key: "numerical",          label: "Numerical Ability %",     primaryKey: false, headerMatches: ["numerical", "quant"] },
   { key: "verbal",             label: "Verbal Ability %",        primaryKey: false, headerMatches: ["verbal", "english"] },
@@ -82,6 +82,7 @@ export function NqtImportDialog({
   const [headerIdx, setHeaderIdx] = useState<number>(0);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [statusMessage, setStatusMessage] = useState("");
   const [result, setResult] = useState<{ imported?: number; error?: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -94,6 +95,7 @@ export function NqtImportDialog({
       setMapping({});
       setResult(null);
       setProgress(0);
+      setStatusMessage("");
     }
   }, [open]);
 
@@ -152,15 +154,23 @@ export function NqtImportDialog({
   const executeImport = async () => {
     if (!file || rawRows.length === 0) return;
     setLoading(true);
-    setProgress(30);
+    setProgress(15);
+    setStatusMessage("Stage 1/5: Uploading and validating spreadsheet data...");
 
     try {
+      await new Promise(r => setTimeout(r, 200));
+      setProgress(40);
+      setStatusMessage("Stage 2/5: Extracting student AVH section scores (Aptitude, Verbal, Coding)...");
+
       // Send mapped file to API for DB student matching
       const fd = new FormData();
       fd.append("file", file);
       fd.append("mapping", JSON.stringify(mapping));
 
       let assessmentsResult: FpcNqtAssessment[] = [];
+
+      setProgress(70);
+      setStatusMessage("Stage 3/5: Matching Registration Numbers with Database Students...");
 
       const res = await fetch("/api/nqt/import", { method: "POST", body: fd });
       if (res.ok) {
@@ -205,7 +215,8 @@ export function NqtImportDialog({
             overall = valid.length > 0 ? Math.round((valid.reduce((a, b) => a + b, 0) / valid.length) * 100) / 100 : 0;
           }
 
-          const aptitude = Math.round(((num + verbal + reasoning + advQuant) / 4) * 100) / 100;
+          const validApt = [num, verbal, reasoning, advQuant].filter(v => v > 0);
+          const aptitude = validApt.length > 0 ? Math.round((validApt.reduce((a, b) => a + b, 0) / validApt.length) * 100) / 100 : 0;
 
           studentRows.push({
             registrationNumber: regNo,
@@ -229,7 +240,8 @@ export function NqtImportDialog({
         const verbalAvg = calcAvg(r => r.verbal);
         const reasoningAvg = calcAvg(r => r.reasoning);
         const advQuantAvg = calcAvg(r => r.advQuant);
-        const aptitudeAvg = Math.round(((numAvg + verbalAvg + reasoningAvg + advQuantAvg) / 4) * 100) / 100;
+        const validAvgs = [numAvg, verbalAvg, reasoningAvg, advQuantAvg].filter(v => v > 0);
+        const aptitudeAvg = validAvgs.length > 0 ? Math.round((validAvgs.reduce((a, b) => a + b, 0) / validAvgs.length) * 100) / 100 : 0;
 
         assessmentsResult = [{
           id: `nqt-${Date.now()}-mapped`,
@@ -247,7 +259,13 @@ export function NqtImportDialog({
         }];
       }
 
+      setProgress(90);
+      setStatusMessage("Stage 4/5: Recalculating HIRE Scores in MySQL Database...");
+      await new Promise(r => setTimeout(r, 200));
+
       setProgress(100);
+      setStatusMessage("Stage 5/5: Import Complete!");
+
       const totalStudents = assessmentsResult.reduce((sum, a) => sum + (a.students?.length || 0), 0);
       setResult({ imported: totalStudents || assessmentsResult.length });
       onImported(assessmentsResult);
@@ -260,7 +278,7 @@ export function NqtImportDialog({
   };
 
   const mappedCount = Object.values(mapping).filter(v => v !== "skip").length;
-  const keyMapped = mapping["registrationNumber"] !== "skip" || mapping["email"] !== "skip";
+  const keyMapped = mapping["registrationNumber"] !== "skip";
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) { setFile(null); setResult(null); onClose(); } }}>
@@ -436,17 +454,25 @@ export function NqtImportDialog({
             <div className="flex items-center gap-3">
               {!keyMapped && (
                 <span className="text-xs text-amber-500 font-medium flex items-center gap-1">
-                  <AlertCircle className="h-3.5 w-3.5" /> Map Reg. Number or Email for student linking
+                  <AlertCircle className="h-3.5 w-3.5" /> Map Reg. Number as Primary Key for student linking
                 </span>
               )}
-              <Button size="sm" disabled={loading} onClick={executeImport} className="font-semibold shadow-sm">
+              <Button size="sm" disabled={loading || !keyMapped} onClick={executeImport} className="font-semibold shadow-sm">
                 {loading ? "Importing & Mapping…" : `Import & Map (${mappedCount} fields)`}
               </Button>
             </div>
           )}
         </div>
 
-        {loading && <Progress value={progress} className="h-1 rounded-none shrink-0" />}
+        {loading && (
+          <div className="px-5 py-2.5 border-t bg-primary/5 shrink-0 space-y-1.5">
+            <div className="flex items-center justify-between text-xs font-semibold text-primary">
+              <span>{statusMessage || "Importing & Mapping..."}</span>
+              <span className="font-mono">{progress}%</span>
+            </div>
+            <Progress value={progress} className="h-1.5 rounded-full" />
+          </div>
+        )}
 
         {result && (
           <div className={`px-5 py-2.5 border-t shrink-0 ${

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { parseFpcNqtExcel } from "@/lib/nqt-parser";
 import { getPool, saveNqtAssessmentToDb, updateStudentNqtScoresInDb } from "@/lib/db";
 import { FpcNqtStudentResult } from "@/lib/nqt-types";
+import { cleanRegNo } from "@/lib/excel-utils";
 
 export async function POST(req: NextRequest) {
   try {
@@ -32,9 +33,8 @@ export async function POST(req: NextRequest) {
         dbEmailMap.set(String(s.email).trim().toLowerCase(), s);
       }
       if (s.registrationNumber) {
-        let cleanReg = String(s.registrationNumber).trim().toLowerCase();
-        if (cleanReg.endsWith(".0")) cleanReg = cleanReg.slice(0, -2);
-        dbRegMap.set(cleanReg, s);
+        const cleanedReg = cleanRegNo(s.registrationNumber).toLowerCase();
+        if (cleanedReg) dbRegMap.set(cleanedReg, s);
       }
     });
 
@@ -42,10 +42,10 @@ export async function POST(req: NextRequest) {
       if (ass.students && ass.students.length > 0) {
         ass.students = ass.students.map((st): FpcNqtStudentResult => {
           const emailClean = String(st.email || "").trim().toLowerCase();
-          let regClean = String(st.registrationNumber || "").trim().toLowerCase();
-          if (regClean.endsWith(".0")) regClean = regClean.slice(0, -2);
+          const regClean = cleanRegNo(st.registrationNumber).toLowerCase();
 
-          let dbMatch = dbEmailMap.get(emailClean) || dbRegMap.get(regClean);
+          // PRIMARY KEY: Prioritize Registration Number first, fallback to Email
+          let dbMatch = (regClean ? dbRegMap.get(regClean) : undefined) || (emailClean ? dbEmailMap.get(emailClean) : undefined);
 
           if (dbMatch) {
             // Asynchronously update student NQT section scores in MySQL DB
@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
 
             return {
               ...st,
-              registrationNumber: dbMatch.registrationNumber || st.registrationNumber || "",
+              registrationNumber: dbMatch.registrationNumber || cleanRegNo(st.registrationNumber) || "",
               email: dbMatch.email || st.email || "",
               name: dbMatch.name || st.name || "",
               department: dbMatch.department || st.department || "",
@@ -69,6 +69,7 @@ export async function POST(req: NextRequest) {
           }
           return {
             ...st,
+            registrationNumber: cleanRegNo(st.registrationNumber) || st.registrationNumber || "",
             matchedDbStudent: false,
           };
         });
