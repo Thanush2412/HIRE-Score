@@ -262,7 +262,7 @@ export async function upsertStudent(
     let departmentId: string | null = null;
     let isExisting = false;
 
-    // 1. Check if student exists by ID first, then by registration number
+    // 1. Check if student exists by ID first, then 3-Way Validation (Reg Number, Email, Phone)
     if (providedId) {
       const [stuRows] = await conn.query(
         "SELECT id, college_id, department_id FROM students WHERE id = ?",
@@ -276,10 +276,45 @@ export async function upsertStudent(
       }
     }
 
+    // Key 1: Registration Number
     if (!isExisting && computed.registrationNumber) {
       const [stuRows] = await conn.query(
         "SELECT id, college_id, department_id FROM students WHERE registration_number = ?",
         [computed.registrationNumber]
+      );
+      if (Array.isArray(stuRows) && stuRows.length > 0) {
+        studentId = (stuRows[0] as any).id;
+        collegeId = (stuRows[0] as any).college_id;
+        departmentId = (stuRows[0] as any).department_id;
+        isExisting = true;
+      }
+    }
+
+    // Key 2: Email Address (if provided and valid)
+    const cleanEmailVal = (computed.email || "").trim().toLowerCase();
+    if (!isExisting && cleanEmailVal && cleanEmailVal !== "n/a" && cleanEmailVal !== "-") {
+      const [stuRows] = await conn.query(
+        "SELECT id, college_id, department_id FROM students WHERE LOWER(email) = ?",
+        [cleanEmailVal]
+      );
+      if (Array.isArray(stuRows) && stuRows.length > 0) {
+        studentId = (stuRows[0] as any).id;
+        collegeId = (stuRows[0] as any).college_id;
+        departmentId = (stuRows[0] as any).department_id;
+        isExisting = true;
+      }
+    }
+
+    // Key 3: Phone Number (if provided 10-digit number)
+    const rawPhoneDigits = (computed.phone || "").replace(/[^\d]/g, "");
+    const cleanPhoneVal = rawPhoneDigits.length === 12 && rawPhoneDigits.startsWith("91") 
+      ? rawPhoneDigits.slice(2) 
+      : (rawPhoneDigits.length === 11 && rawPhoneDigits.startsWith("0") ? rawPhoneDigits.slice(1) : rawPhoneDigits);
+
+    if (!isExisting && cleanPhoneVal && cleanPhoneVal.length >= 10) {
+      const [stuRows] = await conn.query(
+        "SELECT id, college_id, department_id FROM students WHERE REPLACE(REPLACE(REPLACE(phone, '+91', ''), ' ', ''), '-', '') LIKE ?",
+        [`%${cleanPhoneVal}%`]
       );
       if (Array.isArray(stuRows) && stuRows.length > 0) {
         studentId = (stuRows[0] as any).id;

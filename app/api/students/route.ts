@@ -33,11 +33,16 @@ export async function POST(req: NextRequest) {
   try {
     const body: StudentData & { college?: string; id?: string } = await req.json();
 
-    // Check if student already exists to return correct status code
-    const all = await getAllStudents();
-    const existing = all.find(
-      s => (body.id && s.id === body.id) || (body.registrationNumber && s.registrationNumber === (body.registrationNumber ?? "").trim())
-    );
+    const cleanEmail = (body.email || "").trim().toLowerCase();
+    const cleanPhone = (body.phone || "").replace(/[^\d]/g, "");
+
+    const existing = all.find(s => {
+      if (body.id && s.id === body.id) return true;
+      if (body.registrationNumber && s.registrationNumber === (body.registrationNumber ?? "").trim()) return true;
+      if (cleanEmail && cleanEmail !== "n/a" && (s.email || "").trim().toLowerCase() === cleanEmail) return true;
+      if (cleanPhone && cleanPhone.length >= 10 && (s.phone || "").replace(/[^\d]/g, "").includes(cleanPhone)) return true;
+      return false;
+    });
     
     const student = await upsertStudent(body, existing ? "API_UPDATE" : "API_CREATE");
     return NextResponse.json(student, { status: existing ? 200 : 201 });
