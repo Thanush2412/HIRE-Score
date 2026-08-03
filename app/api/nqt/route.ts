@@ -17,18 +17,20 @@ export async function GET(req: NextRequest) {
     const attemptsMap = new Map<string, any[]>();
     const allRegNos = new Set<string>();
 
+    const norm = (str: any) => String(str || "").trim().toLowerCase().replace(/[\s\-\._]/g, "");
+
     savedAssessments.forEach((ass: any) => {
       const assessmentName = ass.assessmentName || "FACE NQT Assessment";
       const uploadedAt = ass.uploadedAt || ass.conductedDate || new Date().toISOString();
       const students = Array.isArray(ass.students) ? ass.students : [];
 
       students.forEach((st: any) => {
-        let regClean = String(st.registrationNumber || "").trim();
+        let regClean = String(st.registrationNumber || st.registrationNo || st.regNo || "").trim();
         if (regClean.endsWith(".0")) regClean = regClean.slice(0, -2);
         const emailClean = String(st.email || "").trim().toLowerCase();
         const nameClean = String(st.name || "").trim().toLowerCase();
 
-        const studentKey = regClean.toLowerCase() || emailClean || nameClean;
+        const studentKey = norm(regClean) || norm(emailClean) || norm(nameClean);
         if (!studentKey) return;
 
         if (regClean) allRegNos.add(regClean);
@@ -74,10 +76,13 @@ export async function GET(req: NextRequest) {
         const matchedDbStudents = await getStudentsByRegNos(Array.from(allRegNos));
         matchedDbStudents.forEach(s => {
           if (s.registrationNumber) {
-            dbStudentsMap.set(s.registrationNumber.trim().toLowerCase(), s);
+            dbStudentsMap.set(norm(s.registrationNumber), s);
           }
           if (s.email) {
-            dbStudentsMap.set(s.email.trim().toLowerCase(), s);
+            dbStudentsMap.set(norm(s.email), s);
+          }
+          if (s.name) {
+            dbStudentsMap.set(norm(s.name), s);
           }
         });
       } catch (e) {
@@ -95,9 +100,10 @@ export async function GET(req: NextRequest) {
       const latestAttempt = attempts[attempts.length - 1];
 
       // Try matching Hire DB metadata
-      const regKey = String(latestAttempt.registrationNumber || "").trim().toLowerCase();
-      const emailKey = String(latestAttempt.email || "").trim().toLowerCase();
-      const dbMatch = dbStudentsMap.get(regKey) || dbStudentsMap.get(emailKey);
+      const regKey = norm(latestAttempt.registrationNumber);
+      const emailKey = norm(latestAttempt.email);
+      const nameKey = norm(latestAttempt.name);
+      const dbMatch = dbStudentsMap.get(regKey) || dbStudentsMap.get(emailKey) || dbStudentsMap.get(nameKey);
 
       const regNo = dbMatch?.registrationNumber || latestAttempt.registrationNumber || "";
       const name = dbMatch?.name || latestAttempt.name || "Unknown Student";

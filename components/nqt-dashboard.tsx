@@ -288,20 +288,18 @@ export function NqtDashboard() {
 
   // Extract student records across all uploaded assessments and merge with Hire DB students roster
   const { consolidatedStudents, allStudents, evaluatedCount } = useMemo(() => {
-    const attemptsMap = new Map<string, (FpcNqtStudentResult & { assessmentName: string; assessmentId: string; uploadedAt: string })[]>();
+    function normKey(val: unknown): string {
+      return String(val || "").trim().toLowerCase().replace(/[\s\-\._]/g, "");
+    }
 
-    // 1. Group uploaded NQT test attempts by student identifier
+    const attemptsByReg = new Map<string, (FpcNqtStudentResult & { assessmentName: string; assessmentId: string; uploadedAt: string })[]>();
+    const attemptsByEmail = new Map<string, (FpcNqtStudentResult & { assessmentName: string; assessmentId: string; uploadedAt: string })[]>();
+    const attemptsByName = new Map<string, (FpcNqtStudentResult & { assessmentName: string; assessmentId: string; uploadedAt: string })[]>();
+
+    // 1. Group uploaded NQT test attempts by student identifier with multi-index normalized keys
     assessments.forEach(ass => {
       if (ass.students && ass.students.length > 0) {
         ass.students.forEach(st => {
-          const emailClean = String(st.email || "").trim().toLowerCase();
-          let regClean = String(st.registrationNumber || "").trim().toLowerCase();
-          if (regClean.endsWith(".0")) regClean = regClean.slice(0, -2);
-          const nameClean = String(st.name || "").trim().toLowerCase();
-
-          const key = regClean || emailClean || nameClean;
-          if (!key) return;
-
           const num = st.numerical || 0;
           const verb = st.verbal || 0;
           const reas = st.reasoning || 0;
@@ -316,9 +314,25 @@ export function NqtDashboard() {
             uploadedAt: ass.uploadedAt,
           };
 
-          const existing = attemptsMap.get(key) || [];
-          existing.push(item);
-          attemptsMap.set(key, existing);
+          const r = normKey(st.registrationNumber);
+          const e = normKey(st.email);
+          const n = normKey(st.name);
+
+          if (r) {
+            const list = attemptsByReg.get(r) || [];
+            list.push(item);
+            attemptsByReg.set(r, list);
+          }
+          if (e) {
+            const list = attemptsByEmail.get(e) || [];
+            list.push(item);
+            attemptsByEmail.set(e, list);
+          }
+          if (n) {
+            const list = attemptsByName.get(n) || [];
+            list.push(item);
+            attemptsByName.set(n, list);
+          }
         });
       }
     });
@@ -342,7 +356,7 @@ export function NqtDashboard() {
       }
     });
 
-    // 3. Merge ALL 520 Placement DB students with uploaded NQT test attempts
+    // 3. Merge ALL Placement DB students with uploaded NQT test attempts
     const processedKeys = new Set<string>();
 
     dbStudents.forEach(dbSt => {
@@ -355,9 +369,13 @@ export function NqtDashboard() {
       if (!studentKey || processedKeys.has(studentKey)) return;
       processedKeys.add(studentKey);
 
-      const attempts = (regClean ? attemptsMap.get(regClean) : undefined) ||
-                       (emailClean ? attemptsMap.get(emailClean) : undefined) ||
-                       (nameClean ? attemptsMap.get(nameClean) : undefined) || [];
+      const rNorm = normKey(dbSt.registrationNumber);
+      const eNorm = normKey(dbSt.email);
+      const nNorm = normKey(dbSt.name);
+
+      const attempts = (rNorm ? attemptsByReg.get(rNorm) : undefined) ||
+                       (eNorm ? attemptsByEmail.get(eNorm) : undefined) ||
+                       (nNorm ? attemptsByName.get(nNorm) : undefined) || [];
 
       if (attempts.length > 0) {
         attempts.sort((a, b) => new Date(a.uploadedAt).getTime() - new Date(b.uploadedAt).getTime());
@@ -386,11 +404,11 @@ export function NqtDashboard() {
 
         consolidatedMap.set(studentKey, {
           key: studentKey,
-          registrationNumber: latestSt.registrationNumber || dbSt.registrationNumber || "",
-          name: latestSt.name || dbSt.name || "Unknown Student",
-          email: latestSt.email || dbSt.email || "",
-          department: latestSt.department || dbSt.department || "",
-          college: latestSt.college || dbSt.college || "",
+          registrationNumber: dbSt.registrationNumber || latestSt.registrationNumber || "",
+          name: dbSt.name || latestSt.name || "Unknown Student",
+          email: dbSt.email || latestSt.email || "",
+          department: dbSt.department || latestSt.department || "",
+          college: dbSt.college || latestSt.college || "",
           attempts,
           firstOverall,
           latestOverall,
@@ -405,11 +423,11 @@ export function NqtDashboard() {
 
         allRecordsList.push({
           ...latestSt,
-          registrationNumber: latestSt.registrationNumber || dbSt.registrationNumber || "",
-          email: latestSt.email || dbSt.email || "",
-          name: latestSt.name || dbSt.name || "Unknown Student",
-          department: latestSt.department || dbSt.department || "",
-          college: latestSt.college || dbSt.college || "",
+          registrationNumber: dbSt.registrationNumber || latestSt.registrationNumber || "",
+          email: dbSt.email || latestSt.email || "",
+          name: dbSt.name || latestSt.name || "Unknown Student",
+          department: dbSt.department || latestSt.department || "",
+          college: dbSt.college || latestSt.college || "",
           matchedDbStudent: true,
           attemptsCount: totalAttempts,
           attempts,

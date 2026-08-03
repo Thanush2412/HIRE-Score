@@ -196,17 +196,21 @@ export async function GET(
     let nqtMatch: any = null;
     try {
       const savedAssessments = await getAllNqtAssessmentsFromDb();
-      let targetReg = student.registrationNumber ? student.registrationNumber.trim().toLowerCase() : "";
-      if (targetReg.endsWith(".0")) targetReg = targetReg.slice(0, -2);
-      const targetEmail = (student.email || "").trim().toLowerCase();
+      const norm = (str: any) => String(str || "").trim().toLowerCase().replace(/[\s\-\._]/g, "");
+
+      const targetReg = norm(student.registrationNumber);
+      const targetEmail = norm(student.email);
+      const targetName = norm(student.name);
 
       for (const ass of savedAssessments) {
         if (Array.isArray(ass.students)) {
           const found = ass.students.find((st: any) => {
-            let reg = String(st.registrationNumber || "").trim().toLowerCase();
-            if (reg.endsWith(".0")) reg = reg.slice(0, -2);
-            let email = String(st.email || "").trim().toLowerCase();
-            return (targetReg && reg === targetReg) || (targetEmail && email === targetEmail);
+            const reg = norm(st.registrationNumber || st.registrationNo || st.regNo);
+            const email = norm(st.email);
+            const name = norm(st.name);
+            return (targetReg && reg === targetReg) ||
+                   (targetEmail && email === targetEmail) ||
+                   (targetName && name === targetName);
           });
           if (found) {
             nqtMatch = {
