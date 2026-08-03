@@ -36,6 +36,7 @@ export async function POST(req: NextRequest) {
     const cleanEmail = (body.email || "").trim().toLowerCase();
     const cleanPhone = (body.phone || "").replace(/[^\d]/g, "");
 
+    const all = await getAllStudents();
     const existing = all.find(s => {
       if (body.id && s.id === body.id) return true;
       if (body.registrationNumber && s.registrationNumber === (body.registrationNumber ?? "").trim()) return true;
