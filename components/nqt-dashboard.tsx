@@ -29,7 +29,6 @@ export type NqtColumnKey =
   | "name"
   | "email"
   | "department"
-  | "assessmentName"
   | "aptitude"
   | "coding"
   | "overall";
@@ -44,7 +43,6 @@ const NQT_COLUMNS: NqtColDef[] = [
   { key: "name",               label: "Student Name" },
   { key: "email",              label: "Email Address" },
   { key: "department",         label: "Dept / College" },
-  { key: "assessmentName",     label: "Test Report" },
   { key: "aptitude",           label: "Aptitude %" },
   { key: "coding",             label: "Coding %" },
   { key: "overall",            label: "Overall %" },
@@ -153,6 +151,9 @@ interface StudentConsolidated {
   latestOverall: number;
   latestAptitude: number;
   latestCoding: number;
+  avgOverall: number;
+  avgAptitude: number;
+  avgCoding: number;
   deltaOverall: number;
   matchedDbStudent: boolean;
 }
@@ -169,7 +170,7 @@ interface DbStudentItem {
 export function NqtDashboard() {
   const [assessments, setAssessments] = useState<FpcNqtAssessment[]>([]);
   const [dbStudents, setDbStudents] = useState<DbStudentItem[]>([]);
-  const [activeTab, setActiveTab] = useState<"students" | "consolidated" | "assessments">("students");
+  const [activeTab, setActiveTab] = useState<"consolidated" | "students" | "assessments">("consolidated");
   const [search, setSearch] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
@@ -192,7 +193,6 @@ export function NqtDashboard() {
     name: [],
     email: [],
     department: [],
-    assessmentName: [],
     aptitude: [],
     coding: [],
     overall: [],
@@ -203,7 +203,6 @@ export function NqtDashboard() {
     name: true,
     email: true,
     department: true,
-    assessmentName: true,
     aptitude: true,
     coding: true,
     overall: true,
@@ -325,7 +324,7 @@ export function NqtDashboard() {
     });
 
     const consolidatedMap = new Map<string, StudentConsolidated>();
-    const allRecordsList: (FpcNqtStudentResult & { assessmentName: string; assessmentId: string; uploadedAt: string })[] = [];
+    const allRecordsList: (FpcNqtStudentResult & { assessmentName: string; assessmentId: string; uploadedAt: string; attemptsCount?: number; attempts?: any[] })[] = [];
 
     // 2. Lookup map for Hire DB students to enrich profile info (college, department, etc.)
     const dbStudentsLookup = new Map<string, DbStudentItem>();
@@ -343,53 +342,127 @@ export function NqtDashboard() {
       }
     });
 
-    // 3. Process ONLY students who have actual uploaded NQT test attempts
-    attemptsMap.forEach((attempts, studentKey) => {
-      if (!attempts || attempts.length === 0) return;
+    // 3. Merge ALL 520 Placement DB students with uploaded NQT test attempts
+    const processedKeys = new Set<string>();
 
-      attempts.sort((a, b) => new Date(a.uploadedAt).getTime() - new Date(b.uploadedAt).getTime());
-      const firstSt = attempts[0];
-      const latestSt = attempts[attempts.length - 1];
-
-      let regClean = String(latestSt.registrationNumber || "").trim().toLowerCase();
+    dbStudents.forEach(dbSt => {
+      let regClean = String(dbSt.registrationNumber || "").trim().toLowerCase();
       if (regClean.endsWith(".0")) regClean = regClean.slice(0, -2);
-      const emailClean = String(latestSt.email || "").trim().toLowerCase();
-      const nameClean = String(latestSt.name || "").trim().toLowerCase();
+      const emailClean = String(dbSt.email || "").trim().toLowerCase();
+      const nameClean = String(dbSt.name || "").trim().toLowerCase();
 
-      const matchedDb = (regClean ? dbStudentsLookup.get(regClean) : undefined) || 
-                        (emailClean ? dbStudentsLookup.get(emailClean) : undefined) ||
-                        (nameClean ? dbStudentsLookup.get(nameClean) : undefined);
+      const studentKey = regClean || emailClean || nameClean;
+      if (!studentKey || processedKeys.has(studentKey)) return;
+      processedKeys.add(studentKey);
 
-      const firstOverall = firstSt.overall;
-      const latestOverall = latestSt.overall;
+      const attempts = (regClean ? attemptsMap.get(regClean) : undefined) ||
+                       (emailClean ? attemptsMap.get(emailClean) : undefined) ||
+                       (nameClean ? attemptsMap.get(nameClean) : undefined) || [];
 
-      consolidatedMap.set(studentKey, {
-        key: studentKey,
-        registrationNumber: matchedDb?.registrationNumber || latestSt.registrationNumber || "",
-        name: matchedDb?.name || latestSt.name || "Unknown Student",
-        email: matchedDb?.email || latestSt.email || "",
-        department: matchedDb?.department || latestSt.department || "",
-        college: matchedDb?.college || latestSt.college || "",
-        attempts,
-        firstOverall,
-        latestOverall,
-        latestAptitude: latestSt.aptitude,
-        latestCoding: latestSt.coding,
-        deltaOverall: Math.round((latestOverall - firstOverall) * 100) / 100,
-        matchedDbStudent: !!matchedDb,
-      });
+      if (attempts.length > 0) {
+        attempts.sort((a, b) => new Date(a.uploadedAt).getTime() - new Date(b.uploadedAt).getTime());
+        const firstSt = attempts[0];
+        const latestSt = attempts[attempts.length - 1];
 
-      attempts.forEach(att => {
-        allRecordsList.push({
-          ...att,
-          registrationNumber: matchedDb?.registrationNumber || att.registrationNumber || "",
-          email: matchedDb?.email || att.email || "",
-          name: matchedDb?.name || att.name || "",
-          department: matchedDb?.department || att.department || "",
-          college: matchedDb?.college || att.college || "",
-          matchedDbStudent: !!matchedDb,
+        const firstOverall = firstSt.overall;
+        const latestOverall = latestSt.overall;
+        const totalAttempts = attempts.length;
+
+        const sumOverall = attempts.reduce((acc, curr) => acc + (curr.overall || 0), 0);
+        const sumAptitude = attempts.reduce((acc, curr) => acc + (curr.aptitude || 0), 0);
+        const sumCoding = attempts.reduce((acc, curr) => acc + (curr.coding || 0), 0);
+        const sumNumerical = attempts.reduce((acc, curr) => acc + (curr.numerical || 0), 0);
+        const sumVerbal = attempts.reduce((acc, curr) => acc + (curr.verbal || 0), 0);
+        const sumReasoning = attempts.reduce((acc, curr) => acc + (curr.reasoning || 0), 0);
+        const sumAdvQuant = attempts.reduce((acc, curr) => acc + (curr.advQuant || 0), 0);
+
+        const avgOverall = Math.round((sumOverall / totalAttempts) * 100) / 100;
+        const avgAptitude = Math.round((sumAptitude / totalAttempts) * 100) / 100;
+        const avgCoding = Math.round((sumCoding / totalAttempts) * 100) / 100;
+        const avgNumerical = Math.round((sumNumerical / totalAttempts) * 100) / 100;
+        const avgVerbal = Math.round((sumVerbal / totalAttempts) * 100) / 100;
+        const avgReasoning = Math.round((sumReasoning / totalAttempts) * 100) / 100;
+        const avgAdvQuant = Math.round((sumAdvQuant / totalAttempts) * 100) / 100;
+
+        consolidatedMap.set(studentKey, {
+          key: studentKey,
+          registrationNumber: latestSt.registrationNumber || dbSt.registrationNumber || "",
+          name: latestSt.name || dbSt.name || "Unknown Student",
+          email: latestSt.email || dbSt.email || "",
+          department: latestSt.department || dbSt.department || "",
+          college: latestSt.college || dbSt.college || "",
+          attempts,
+          firstOverall,
+          latestOverall,
+          latestAptitude: latestSt.aptitude,
+          latestCoding: latestSt.coding,
+          avgOverall,
+          avgAptitude,
+          avgCoding,
+          deltaOverall: Math.round((latestOverall - firstOverall) * 100) / 100,
+          matchedDbStudent: true,
         });
-      });
+
+        allRecordsList.push({
+          ...latestSt,
+          registrationNumber: latestSt.registrationNumber || dbSt.registrationNumber || "",
+          email: latestSt.email || dbSt.email || "",
+          name: latestSt.name || dbSt.name || "Unknown Student",
+          department: latestSt.department || dbSt.department || "",
+          college: latestSt.college || dbSt.college || "",
+          matchedDbStudent: true,
+          attemptsCount: totalAttempts,
+          attempts,
+          aptitude: avgAptitude,
+          coding: avgCoding,
+          overall: avgOverall,
+          numerical: avgNumerical,
+          verbal: avgVerbal,
+          reasoning: avgReasoning,
+          advQuant: avgAdvQuant,
+        });
+      } else {
+        // Unattempted student from Placement DB roster
+        consolidatedMap.set(studentKey, {
+          key: studentKey,
+          registrationNumber: dbSt.registrationNumber || "",
+          name: dbSt.name || "Unknown Student",
+          email: dbSt.email || "",
+          department: dbSt.department || "",
+          college: dbSt.college || "",
+          attempts: [],
+          firstOverall: 0,
+          latestOverall: 0,
+          latestAptitude: 0,
+          latestCoding: 0,
+          avgOverall: 0,
+          avgAptitude: 0,
+          avgCoding: 0,
+          deltaOverall: 0,
+          matchedDbStudent: true,
+        });
+
+        allRecordsList.push({
+          registrationNumber: dbSt.registrationNumber || "",
+          name: dbSt.name || "Unknown Student",
+          email: dbSt.email || "",
+          department: dbSt.department || "",
+          college: dbSt.college || "",
+          matchedDbStudent: true,
+          attemptsCount: 0,
+          attempts: [],
+          assessmentName: "Not Attempted",
+          assessmentId: "unattempted",
+          uploadedAt: "",
+          aptitude: 0,
+          coding: 0,
+          overall: 0,
+          numerical: 0,
+          verbal: 0,
+          reasoning: 0,
+          advQuant: 0,
+        });
+      }
     });
 
     const consolidatedList = Array.from(consolidatedMap.values());
@@ -397,21 +470,150 @@ export function NqtDashboard() {
 
     return {
       consolidatedStudents: consolidatedList,
-      allStudents: allRecordsList,
+      allStudents: consolidatedList.map(s => {
+        const latest = s.attempts.length > 0 ? s.attempts[s.attempts.length - 1] : null;
+        return {
+          registrationNumber: s.registrationNumber,
+          name: s.name,
+          email: s.email,
+          department: s.department,
+          college: s.college,
+          matchedDbStudent: s.matchedDbStudent,
+          attemptsCount: s.attempts.length,
+          attempts: s.attempts,
+          assessmentName: latest ? latest.assessmentName : "Not Attempted",
+          assessmentId: latest ? ((latest as any).assessmentId || "unattempted") : "unattempted",
+          uploadedAt: latest ? latest.uploadedAt : "",
+          aptitude: s.avgAptitude,
+          coding: s.avgCoding,
+          overall: s.avgOverall,
+          numerical: latest ? latest.numerical : 0,
+          verbal: latest ? latest.verbal : 0,
+          reasoning: latest ? latest.reasoning : 0,
+          advQuant: latest ? latest.advQuant : 0,
+        };
+      }),
       evaluatedCount: evaluated,
     };
   }, [assessments, dbStudents]);
 
 
-  // Recharts Assessment Progress Trend dataset
+  // Map each assessment ID to a clean, unique College Name with Test Number suffix if repeated
+  const assessmentCollegeMap = useMemo(() => {
+    const map = new Map<string, string>();
+    const collegeGroups = new Map<string, { id: string; ass: FpcNqtAssessment; date: number }[]>();
+
+    assessments.forEach(ass => {
+      let rawCollege = "";
+      if (ass.students && ass.students.length > 0) {
+        const counts: Record<string, number> = {};
+        for (const st of ass.students) {
+          const col = (st.college || "").trim();
+          if (col && col.toLowerCase() !== "unspecified" && col.toLowerCase() !== "unknown college") {
+            counts[col] = (counts[col] || 0) + 1;
+          }
+        }
+        const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+        if (sorted.length > 0) rawCollege = sorted[0][0];
+      }
+
+      if (!rawCollege) {
+        const name = ass.assessmentName || "Assessment";
+        if (name.includes("SDNB")) rawCollege = "SDNB Vaishnav College";
+        else if (name.includes("Takshashila") || name.startsWith("TU")) rawCollege = "Takshashila University";
+        else if (name.includes("AMET")) rawCollege = "AMET University";
+        else if (name.includes("S-VYASA") || name.includes("VYASA")) rawCollege = "S-VYASA University";
+        else rawCollege = name.replace(/\.(xlsx|xls|csv)$/i, "").trim();
+      }
+
+      const dateMs = new Date(ass.uploadedAt || (ass as any).conductedDate || 0).getTime();
+      const list = collegeGroups.get(rawCollege) || [];
+      list.push({ id: ass.id, ass, date: dateMs });
+      collegeGroups.set(rawCollege, list);
+    });
+
+    collegeGroups.forEach((items, collegeName) => {
+      // Sort chronologically by date
+      items.sort((a, b) => a.date - b.date);
+
+      if (items.length === 1) {
+        map.set(items[0].id, collegeName);
+      } else {
+        items.forEach((item, idx) => {
+          map.set(item.id, `${collegeName} (Test ${idx + 1})`);
+        });
+      }
+    });
+
+    return map;
+  }, [assessments]);
+
+  const getCollegeDisplayName = (ass: FpcNqtAssessment): string => {
+    return assessmentCollegeMap.get(ass.id) || ass.assessmentName;
+  };
+
+  // Recharts Assessment Progress Trend dataset (Combined 1 entry per College)
   const chartData = useMemo(() => {
-    return assessments.map(ass => ({
-      name: ass.assessmentName.length > 18 ? `${ass.assessmentName.slice(0, 18)}...` : ass.assessmentName,
-      fullName: ass.assessmentName,
-      Aptitude: ass.aptitudeAvg || Math.round(((ass.numericalAbilityAvg + ass.verbalAbilityAvg + ass.reasoningAbilityAvg + ass.advancedQuantReasoningAvg) / 4) * 100) / 100,
-      Coding: ass.codingAvg,
-      Overall: ass.overallAvg,
-    }));
+    const collegeMap = new Map<string, {
+      aptitudeSum: number;
+      codingSum: number;
+      overallSum: number;
+      count: number;
+    }>();
+
+    assessments.forEach(ass => {
+      let rawCollege = "";
+      if (ass.students && ass.students.length > 0) {
+        const counts: Record<string, number> = {};
+        for (const st of ass.students) {
+          const col = (st.college || "").trim();
+          if (col && col.toLowerCase() !== "unspecified" && col.toLowerCase() !== "unknown college") {
+            counts[col] = (counts[col] || 0) + 1;
+          }
+        }
+        const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+        if (sorted.length > 0) rawCollege = sorted[0][0];
+      }
+
+      if (!rawCollege) {
+        const name = ass.assessmentName || "Assessment";
+        if (name.includes("SDNB")) rawCollege = "SDNB Vaishnav College";
+        else if (name.includes("Takshashila") || name.startsWith("TU")) rawCollege = "Takshashila University";
+        else if (name.includes("AMET")) rawCollege = "AMET University";
+        else if (name.includes("S-VYASA") || name.includes("VYASA")) rawCollege = "S-VYASA University";
+        else rawCollege = name.replace(/\.(xlsx|xls|csv)$/i, "").trim();
+      }
+
+      const aptVal = ass.aptitudeAvg || Math.round(((ass.numericalAbilityAvg + ass.verbalAbilityAvg + ass.reasoningAbilityAvg + ass.advancedQuantReasoningAvg) / 4) * 100) / 100;
+      const codingVal = ass.codingAvg || 0;
+      const overallVal = ass.overallAvg || 0;
+
+      const existing = collegeMap.get(rawCollege) || { aptitudeSum: 0, codingSum: 0, overallSum: 0, count: 0 };
+      existing.aptitudeSum += aptVal;
+      existing.codingSum += codingVal;
+      existing.overallSum += overallVal;
+      existing.count += 1;
+      collegeMap.set(rawCollege, existing);
+    });
+
+    const result: { name: string; fullName: string; Aptitude: number; Coding: number; Overall: number; count: number }[] = [];
+
+    collegeMap.forEach((data, collegeName) => {
+      const aptAvg = Math.round((data.aptitudeSum / data.count) * 100) / 100;
+      const codingAvg = Math.round((data.codingSum / data.count) * 100) / 100;
+      const overallAvg = Math.round((data.overallSum / data.count) * 100) / 100;
+
+      result.push({
+        name: collegeName,
+        fullName: `${collegeName} (${data.count} ${data.count === 1 ? 'Test Report' : 'Combined Test Reports'})`,
+        Aptitude: aptAvg,
+        Coding: codingAvg,
+        Overall: overallAvg,
+        count: data.count,
+      });
+    });
+
+    return result;
   }, [assessments]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -585,7 +787,6 @@ export function NqtDashboard() {
       name: [],
       email: [],
       department: [],
-      assessmentName: [],
       aptitude: [],
       coding: [],
       overall: [],
@@ -755,17 +956,6 @@ export function NqtDashboard() {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {consolidatedStudents.length > 0 && (
-            <button
-              onClick={() => openStudentProgress(consolidatedStudents[0].key)}
-              className="flex items-center gap-1.5 text-xs font-semibold border rounded-lg px-3 py-2 transition-all shadow-sm"
-              style={{ color: "#3b82f6", borderColor: `#3b82f655`, background: `#3b82f60d` }}
-            >
-              <TrendingUp className="h-4 w-4" />
-              See Progress
-            </button>
-          )}
-
           <input
             type="file"
             ref={fileInputRef}
@@ -781,22 +971,6 @@ export function NqtDashboard() {
             <SlidersHorizontal className="h-4 w-4 mr-1.5" />
             Import NQT Data
           </Button>
-
-          <Button
-            variant="outline"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isUploading}
-            className="font-medium text-xs py-2"
-          >
-            <Upload className="h-4 w-4 mr-1.5" />
-            {isUploading ? "Uploading..." : "Quick Upload"}
-          </Button>
-
-          {assessments.length > 0 && (
-            <Button variant="outline" size="icon" onClick={handleClearAll} title="Clear All Records">
-              <Trash2 className="h-4 w-4 text-destructive" />
-            </Button>
-          )}
         </div>
       </div>
 
@@ -919,7 +1093,7 @@ export function NqtDashboard() {
               <BarChart3 className="h-5 w-5 text-indigo-500" /> Assessment Comparison & Progress Trend
             </CardTitle>
             <CardDescription>
-              Performance trend across uploaded NQT test reports over time.
+              Combined performance comparison across colleges from all uploaded NQT test reports.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -930,7 +1104,7 @@ export function NqtDashboard() {
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                   <YAxis domain={[0, 100]} unit="%" tick={{ fontSize: 12 }} />
                   <Tooltip
-                    formatter={(value: any) => [`${value}%`]}
+                    formatter={(value: any, name: any) => [`${value}%`, `${name} Avg`]}
                     labelFormatter={(label, payload) => payload?.[0]?.payload?.fullName || label}
                   />
                   <Legend wrapperStyle={{ fontSize: "12px", paddingTop: "10px" }} />
@@ -980,16 +1154,6 @@ export function NqtDashboard() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant={filterMatchedOnly ? "default" : "outline"}
-              size="sm"
-              onClick={() => setFilterMatchedOnly(!filterMatchedOnly)}
-              className="text-xs font-semibold rounded-lg shrink-0"
-              title="Show only students matched with Hire DB"
-            >
-              <UserCheck className="h-3.5 w-3.5 mr-1 text-emerald-500" />
-              Hire DB Matched ({matchedStudentCount})
-            </Button>
 
             {/* Column Visibility Selector Popover */}
             {activeTab === "students" && (
@@ -1210,7 +1374,11 @@ export function NqtDashboard() {
                     paginatedStudents.map((st, idx) => {
                       const globalIdx = ((currentPage - 1) * pageSize) + idx + 1;
                       return (
-                        <TableRow key={`${st.assessmentId}-${idx}`} className="hover:bg-muted/30">
+                        <TableRow
+                          key={`${st.assessmentId}-${idx}`}
+                          onClick={() => openStudentProgress(st.registrationNumber || st.email || st.name)}
+                          className="hover:bg-muted/50 cursor-pointer transition-colors"
+                        >
                           <TableCell className="text-center text-xs font-mono text-muted-foreground font-semibold">
                             {globalIdx}
                           </TableCell>
@@ -1218,14 +1386,7 @@ export function NqtDashboard() {
                           {visibleCols["registrationNumber"] && (
                             <TableCell className="font-mono text-xs font-bold">
                               {st.registrationNumber ? (
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-primary">{st.registrationNumber}</span>
-                                  {st.matchedDbStudent && (
-                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20" title="Matched to Student DB">
-                                      DB Match
-                                    </span>
-                                  )}
-                                </div>
+                                <span className="text-primary">{st.registrationNumber}</span>
                               ) : (
                                 <span className="text-muted-foreground/60 italic text-[11px]">— Unlinked</span>
                               )}
@@ -1233,7 +1394,16 @@ export function NqtDashboard() {
                           )}
 
                           {visibleCols["name"] && (
-                            <TableCell className="font-semibold text-foreground text-xs">{st.name}</TableCell>
+                            <TableCell className="font-semibold text-foreground text-xs">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span>{st.name}</span>
+                                {((st as any).attemptsCount || (st as any).attempts?.length || 1) > 1 && (
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20" title={`${(st as any).attemptsCount || (st as any).attempts?.length} test uploads aggregated into averages`}>
+                                    {(st as any).attemptsCount || (st as any).attempts?.length} Tests (Avg)
+                                  </span>
+                                )}
+                              </div>
+                            </TableCell>
                           )}
 
                           {visibleCols["email"] && (
@@ -1256,15 +1426,7 @@ export function NqtDashboard() {
                             </TableCell>
                           )}
 
-                          {visibleCols["assessmentName"] && (
-                            <TableCell className="text-xs max-w-[180px] truncate" title={st.assessmentName}>
-                              {st.assessmentName === "Not Attempted" ? (
-                                <span className="text-muted-foreground/60 italic text-[11px]">Not Attempted</span>
-                              ) : (
-                                <span className="text-muted-foreground font-medium">{st.assessmentName}</span>
-                              )}
-                            </TableCell>
-                          )}
+
 
                           {visibleCols["aptitude"] && (
                             <TableCell className="text-center bg-indigo-500/5 font-bold text-xs text-indigo-600 dark:text-indigo-400">
@@ -1306,7 +1468,7 @@ export function NqtDashboard() {
                           <TableCell className="text-center">
                             <div className="flex items-center justify-center gap-1.5">
                               <button
-                                onClick={() => openEditStudentModal(st)}
+                                onClick={(e) => { e.stopPropagation(); openEditStudentModal(st); }}
                                 className="inline-flex items-center gap-1 text-[11px] font-medium border rounded-md px-2 py-1 transition-all shadow-2xs hover:bg-muted"
                                 title="Read & Update Student Details & Scores"
                               >
@@ -1342,6 +1504,7 @@ export function NqtDashboard() {
                     <TableHead className="font-bold text-center w-10">#</TableHead>
                     <TableHead className="font-bold">Reg Number / Student</TableHead>
                     <TableHead className="font-bold text-center">Tests Taken</TableHead>
+                    <TableHead className="font-bold text-center bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">Average Overall %</TableHead>
                     <TableHead className="font-bold text-center bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">Latest Aptitude %</TableHead>
                     <TableHead className="font-bold text-center">Latest Coding %</TableHead>
                     <TableHead className="font-bold text-center">Latest Overall %</TableHead>
@@ -1353,7 +1516,7 @@ export function NqtDashboard() {
                 <TableBody>
                   {paginatedConsolidated.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="text-center py-12 text-muted-foreground">
+                      <TableCell colSpan={10} className="text-center py-12 text-muted-foreground">
                         No consolidated student records available. Upload NQT reports to see student progress across tests.
                       </TableCell>
                     </TableRow>
@@ -1361,19 +1524,18 @@ export function NqtDashboard() {
                     paginatedConsolidated.map((st, idx) => {
                       const globalIdx = ((currentPage - 1) * pageSize) + idx + 1;
                       return (
-                        <TableRow key={st.key} className="hover:bg-muted/30">
+                        <TableRow
+                          key={st.key}
+                          onClick={() => openStudentProgress(st.key)}
+                          className="hover:bg-muted/50 cursor-pointer transition-colors"
+                        >
                           <TableCell className="text-center text-xs font-mono text-muted-foreground font-semibold">
                             {globalIdx}
                           </TableCell>
 
                           <TableCell className="text-xs">
-                            <div className="font-bold text-foreground flex items-center gap-1.5">
+                            <div className="font-bold text-foreground">
                               {st.name}
-                              {st.matchedDbStudent && (
-                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20" title="Matched to Student DB">
-                                  DB Match
-                                </span>
-                              )}
                             </div>
                             <div className="font-mono text-[11px] text-primary">
                               {st.registrationNumber ? st.registrationNumber : "No Reg No"}
@@ -1390,6 +1552,10 @@ export function NqtDashboard() {
                             <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-muted border">
                               {st.attempts.length} Test{st.attempts.length > 1 ? "s" : ""}
                             </span>
+                          </TableCell>
+
+                          <TableCell className="text-center bg-emerald-500/5 font-extrabold text-xs text-emerald-700 dark:text-emerald-400">
+                            {st.avgOverall}%
                           </TableCell>
 
                           <TableCell className="text-center bg-indigo-500/5 font-bold text-xs text-indigo-600 dark:text-indigo-400">
@@ -1467,7 +1633,12 @@ export function NqtDashboard() {
                       const aptAvg = item.aptitudeAvg || Math.round(((item.numericalAbilityAvg + item.verbalAbilityAvg + item.reasoningAbilityAvg + item.advancedQuantReasoningAvg) / 4) * 100) / 100;
                       return (
                         <TableRow key={item.id} className="hover:bg-muted/30">
-                          <TableCell className="font-semibold text-foreground">{item.assessmentName}</TableCell>
+                          <TableCell className="font-semibold text-foreground">
+                            {getCollegeDisplayName(item)}
+                            {getCollegeDisplayName(item) !== item.assessmentName && (
+                              <span className="block text-[11px] font-normal text-muted-foreground">{item.assessmentName}</span>
+                            )}
+                          </TableCell>
                           <TableCell className="text-center font-medium">
                             <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-bold bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
                               {item.assessmentsConducted} Conducted
@@ -1486,16 +1657,7 @@ export function NqtDashboard() {
                             </span>
                           </TableCell>
 
-                          <TableCell className="text-right">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleDelete(item.id)}
-                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
+                          <TableCell className="text-right"></TableCell>
                         </TableRow>
                       );
                     })
@@ -1659,13 +1821,8 @@ export function NqtDashboard() {
               {/* Student Identity Card */}
               <div className="mt-4 p-3.5 rounded-xl bg-background border flex flex-wrap items-center justify-between gap-3 text-xs">
                 <div>
-                  <p className="font-bold text-foreground text-sm flex items-center gap-2">
+                  <p className="font-bold text-foreground text-sm">
                     {progressStudent.name}
-                    {progressStudent.matchedDbStudent && (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20" title="Matched to Student DB">
-                        DB Match
-                      </span>
-                    )}
                   </p>
                   <div className="font-mono text-primary text-xs font-medium mt-0.5 flex flex-wrap items-center gap-2">
                     {progressStudent.registrationNumber && <span>{progressStudent.registrationNumber}</span>}
@@ -1678,6 +1835,9 @@ export function NqtDashboard() {
                   )}
                 </div>
                 <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
+                    Avg Overall: {progressStudent.avgOverall}%
+                  </span>
                   <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
                     {progressStudent.attempts.length} Test Attempt{progressStudent.attempts.length > 1 ? "s" : ""}
                   </span>

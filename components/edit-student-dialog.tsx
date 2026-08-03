@@ -77,32 +77,67 @@ export function EditStudentDialog({
     setForm((prev) => ({ ...prev, [key]: val }));
   };
 
-  // Helper variables for cascading college selectors
+  // Robust options for cascading selectors
+  const collegeOptions = Array.from(
+    new Set([
+      ...(settings.colleges?.map((c) => c.name) || []),
+      ...(form.college ? [form.college] : []),
+    ])
+  ).filter(Boolean);
+
   const selectedCollege = settings.colleges?.find((c) => c.name === form.college);
+  const collegeCourses = selectedCollege?.courses?.map((c) => c.name) || [];
+  const allSettingsCourses = Array.from(
+    new Set(settings.colleges?.flatMap((c) => c.courses?.map((co) => co.name) || []) || [])
+  );
+  const departmentOptions = Array.from(
+    new Set([
+      ...(form.college ? collegeCourses : allSettingsCourses),
+      ...(form.department ? [form.department] : []),
+    ])
+  ).filter(Boolean);
+
   const selectedCourse = selectedCollege?.courses?.find((c) => c.name === form.department);
-  const availableYears = selectedCourse?.years || [];
+  const courseYears = selectedCourse?.years || [];
+  const standardYears = ["1st Year", "2nd Year", "3rd Year", "4th Year", "1", "2", "3", "4"];
+  const yearOptions = Array.from(
+    new Set([
+      ...(courseYears.length > 0 ? courseYears : standardYears),
+      ...(form.year ? [form.year] : []),
+    ])
+  ).filter(Boolean);
 
   const handleCollegeChange = (collegeName: string | null) => {
     if (!collegeName) return;
     const col = settings.colleges?.find((c) => c.name === collegeName);
-    setForm((prev) => ({
-      ...prev,
-      college: collegeName,
-      department: "",
-      year: "",
-      stream: col?.stream || "engineering",
-    }));
+    const validDepts = col?.courses?.map((c) => c.name) || [];
+
+    setForm((prev) => {
+      const nextDept = validDepts.includes(prev.department || "") ? (prev.department || "") : "";
+      const co = col?.courses?.find((c) => c.name === nextDept);
+      const validYears = co?.years || [];
+      const nextYear = validYears.length > 0 && validYears.includes(prev.year || "") ? (prev.year || "") : "";
+
+      return {
+        ...prev,
+        college: collegeName,
+        department: nextDept,
+        year: nextYear,
+        stream: col?.stream || prev.stream || "engineering",
+      };
+    });
   };
 
   const handleCourseChange = (courseName: string | null) => {
     if (!courseName) return;
     const col = settings.colleges?.find((c) => c.name === form.college);
     const co = col?.courses?.find((c) => c.name === courseName);
+    const validYears = co?.years || [];
     setForm((prev) => ({
       ...prev,
       department: courseName,
-      year: "",
-      degreeType: co?.degreeType || "ug",
+      year: validYears.length > 0 && validYears.includes(prev.year || "") ? prev.year : "",
+      degreeType: co?.degreeType || prev.degreeType || "ug",
     }));
   };
 
@@ -122,6 +157,7 @@ export function EditStudentDialog({
       // Coerce numeric types exactly as expected by formula calculation engines
       const payload = {
         ...form,
+        id: student.id,
         xMarks: Number(form.xMarks) || 0,
         xiiMarks: Number(form.xiiMarks) || 0,
         ugPercentage: Number(form.ugPercentage) || 0,
@@ -158,7 +194,15 @@ export function EditStudentDialog({
       });
 
       if (!res.ok) {
-        throw new Error(await res.text() || "Failed to save student details.");
+        let errorMsg = "Failed to save student details.";
+        try {
+          const data = await res.json();
+          errorMsg = data.error || errorMsg;
+        } catch {
+          const txt = await res.text();
+          if (txt) errorMsg = txt;
+        }
+        throw new Error(errorMsg);
       }
 
       onSave();
@@ -279,9 +323,9 @@ export function EditStudentDialog({
                               <SelectValue placeholder="Select College" />
                             </SelectTrigger>
                             <SelectContent>
-                              {settings.colleges?.map((c) => (
-                                <SelectItem key={c.name} value={c.name} className="text-xs">
-                                  {c.name}
+                              {collegeOptions.map((name) => (
+                                <SelectItem key={name} value={name} className="text-xs">
+                                  {name}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -296,9 +340,9 @@ export function EditStudentDialog({
                               <SelectValue placeholder="Select Department" />
                             </SelectTrigger>
                             <SelectContent>
-                              {selectedCollege?.courses?.map((c) => (
-                                <SelectItem key={c.name} value={c.name} className="text-xs">
-                                  {c.name}
+                              {departmentOptions.map((name) => (
+                                <SelectItem key={name} value={name} className="text-xs">
+                                  {name}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -313,7 +357,7 @@ export function EditStudentDialog({
                               <SelectValue placeholder="Select Year" />
                             </SelectTrigger>
                             <SelectContent>
-                              {availableYears.map((y) => (
+                              {yearOptions.map((y) => (
                                 <SelectItem key={y} value={y} className="text-xs">
                                   {y}
                                 </SelectItem>
@@ -458,8 +502,8 @@ export function EditStudentDialog({
                         <div className="space-y-1.5">
                           <Label className="text-xs font-medium">CEFR Level</Label>
                           <Select
-                            value={form.cefrGrammar || ""}
-                            onValueChange={(v) => setVal("cefrGrammar", v)}
+                            value={form.cefrGrammar || "none"}
+                            onValueChange={(v) => setVal("cefrGrammar", v === "none" ? "" : v)}
                           >
                             <SelectTrigger className="h-9 text-xs focus-visible:ring-primary w-full">
                               <SelectValue placeholder="Select Level" />
@@ -477,8 +521,8 @@ export function EditStudentDialog({
                         <div className="space-y-1.5">
                           <Label className="text-xs font-medium">EF SET Listening</Label>
                           <Select
-                            value={form.efSetListening || ""}
-                            onValueChange={(v) => setVal("efSetListening", v)}
+                            value={form.efSetListening || "none"}
+                            onValueChange={(v) => setVal("efSetListening", v === "none" ? "" : v)}
                           >
                             <SelectTrigger className="h-9 text-xs focus-visible:ring-primary w-full">
                               <SelectValue placeholder="Select Level" />
@@ -496,8 +540,8 @@ export function EditStudentDialog({
                         <div className="space-y-1.5">
                           <Label className="text-xs font-medium">EF SET Speaking</Label>
                           <Select
-                            value={form.efSetSpeaking || ""}
-                            onValueChange={(v) => setVal("efSetSpeaking", v)}
+                            value={form.efSetSpeaking || "none"}
+                            onValueChange={(v) => setVal("efSetSpeaking", v === "none" ? "" : v)}
                           >
                             <SelectTrigger className="h-9 text-xs focus-visible:ring-primary w-full">
                               <SelectValue placeholder="Select Level" />
@@ -515,8 +559,8 @@ export function EditStudentDialog({
                         <div className="space-y-1.5">
                           <Label className="text-xs font-medium">EF SET Reading</Label>
                           <Select
-                            value={form.efSetReading || ""}
-                            onValueChange={(v) => setVal("efSetReading", v)}
+                            value={form.efSetReading || "none"}
+                            onValueChange={(v) => setVal("efSetReading", v === "none" ? "" : v)}
                           >
                             <SelectTrigger className="h-9 text-xs focus-visible:ring-primary w-full">
                               <SelectValue placeholder="Select Level" />
@@ -534,8 +578,8 @@ export function EditStudentDialog({
                         <div className="space-y-1.5">
                           <Label className="text-xs font-medium">EF SET Writing</Label>
                           <Select
-                            value={form.efSetWriting || ""}
-                            onValueChange={(v) => setVal("efSetWriting", v)}
+                            value={form.efSetWriting || "none"}
+                            onValueChange={(v) => setVal("efSetWriting", v === "none" ? "" : v)}
                           >
                             <SelectTrigger className="h-9 text-xs focus-visible:ring-primary w-full">
                               <SelectValue placeholder="Select Level" />

@@ -31,18 +31,18 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const body: StudentData & { college?: string } = await req.json();
+    const body: StudentData & { college?: string; id?: string } = await req.json();
 
     // Check if student already exists to return correct status code
     const all = await getAllStudents();
     const existing = all.find(
-      s => s.registrationNumber === (body.registrationNumber ?? "").trim()
+      s => (body.id && s.id === body.id) || (body.registrationNumber && s.registrationNumber === (body.registrationNumber ?? "").trim())
     );
     
     const student = await upsertStudent(body, existing ? "API_UPDATE" : "API_CREATE");
     return NextResponse.json(student, { status: existing ? 200 : 201 });
-  } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 400 });
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || String(e) }, { status: 400 });
   }
 }
 

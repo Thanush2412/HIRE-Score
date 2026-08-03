@@ -9,6 +9,14 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 export const metadata: Metadata = {
   title: "HIRE Score Dashboard",
   description: "Student HIRE Score Management System",
+  icons: {
+    icon: [
+      { url: "/site-icon.png", type: "image/png" },
+      { url: "/logo.png", type: "image/png" },
+    ],
+    shortcut: "/site-icon.png",
+    apple: "/site-icon.png",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

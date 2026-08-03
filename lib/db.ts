@@ -237,7 +237,7 @@ export async function getStudentsFiltered(opts: {
 }
 
 export async function upsertStudent(
-  input: StudentData & { college?: string },
+  input: StudentData & { college?: string; id?: string },
   actionType: string = "SYSTEM_UPSERT",
   skipReturn = false,
   externalConn?: any
@@ -252,75 +252,92 @@ export async function upsertStudent(
 
   try {
     const computed = computeScores(input);
-    const collegeName = input.college || "";
+    const collegeName = (input.college || "").trim();
     const stream = input.stream || "engineering";
     const degreeType = input.degreeType || "ug";
 
-    let studentId = (computed as any).id || crypto.randomUUID();
-    let collegeId = null;
-    let departmentId = null;
+    const providedId = (input as any).id || (computed as any).id || null;
+    let studentId: string | null = null;
+    let collegeId: string | null = null;
+    let departmentId: string | null = null;
     let isExisting = false;
 
-    // Check if student exists
-    const [stuRows] = await conn.query(
-      "SELECT id, college_id, department_id FROM students WHERE registration_number = ?",
-      [computed.registrationNumber]
-    );
-    if (Array.isArray(stuRows) && stuRows.length > 0) {
-      studentId = (stuRows[0] as any).id;
-      collegeId = (stuRows[0] as any).college_id;
-      departmentId = (stuRows[0] as any).department_id;
-      isExisting = true;
+    // 1. Check if student exists by ID first, then by registration number
+    if (providedId) {
+      const [stuRows] = await conn.query(
+        "SELECT id, college_id, department_id FROM students WHERE id = ?",
+        [providedId]
+      );
+      if (Array.isArray(stuRows) && stuRows.length > 0) {
+        studentId = (stuRows[0] as any).id;
+        collegeId = (stuRows[0] as any).college_id;
+        departmentId = (stuRows[0] as any).department_id;
+        isExisting = true;
+      }
     }
 
-    // Skip college and department upsert entirely for SECONDARY_IMPORT
-    if (!isExisting || actionType !== "SECONDARY_IMPORT") {
-      // 1. Upsert College
-      let activeCollegeId = collegeId;
-      if (!isExisting || !activeCollegeId) {
-        activeCollegeId = crypto.randomUUID();
+    if (!isExisting && computed.registrationNumber) {
+      const [stuRows] = await conn.query(
+        "SELECT id, college_id, department_id FROM students WHERE registration_number = ?",
+        [computed.registrationNumber]
+      );
+      if (Array.isArray(stuRows) && stuRows.length > 0) {
+        studentId = (stuRows[0] as any).id;
+        collegeId = (stuRows[0] as any).college_id;
+        departmentId = (stuRows[0] as any).department_id;
+        isExisting = true;
+      }
+    }
+
+    if (!studentId) {
+      studentId = providedId || crypto.randomUUID();
+    }
+
+    // 2. Resolve College & Department IDs if college or department is provided
+    if (collegeName || actionType !== "SECONDARY_IMPORT") {
+      if (collegeName) {
         const [colRows] = await conn.query("SELECT id FROM colleges WHERE name = ?", [collegeName]);
         if (Array.isArray(colRows) && colRows.length > 0) {
-          activeCollegeId = (colRows[0] as any).id;
+          collegeId = (colRows[0] as any).id;
           await conn.query(
             "UPDATE colleges SET stream = ?, degree_type = ? WHERE id = ?",
-            [stream, degreeType, activeCollegeId]
+            [stream, degreeType, collegeId]
           );
         } else {
+          collegeId = crypto.randomUUID();
           await conn.query(
             "INSERT INTO colleges (id, name, stream, degree_type) VALUES (?, ?, ?, ?)",
-            [activeCollegeId, collegeName, stream, degreeType]
+            [collegeId, collegeName, stream, degreeType]
           );
         }
       }
-      collegeId = activeCollegeId;
 
-      // 2. Upsert Department
-      let activeDeptId = departmentId;
-      if (!isExisting || !activeDeptId) {
-        activeDeptId = crypto.randomUUID();
-        const [deptRows] = await conn.query("SELECT id FROM departments WHERE college_id = ? AND name = ?", [collegeId, computed.department]);
+      if (computed.department && collegeId) {
+        const [deptRows] = await conn.query(
+          "SELECT id FROM departments WHERE college_id = ? AND name = ?",
+          [collegeId, computed.department]
+        );
         if (Array.isArray(deptRows) && deptRows.length > 0) {
-          activeDeptId = (deptRows[0] as any).id;
+          departmentId = (deptRows[0] as any).id;
         } else {
+          departmentId = crypto.randomUUID();
           await conn.query(
             "INSERT INTO departments (id, college_id, name) VALUES (?, ?, ?)",
-            [activeDeptId, collegeId, computed.department]
+            [departmentId, collegeId, computed.department]
           );
         }
       }
-      departmentId = activeDeptId;
     }
 
     // 3. Upsert Student Identity
     if (isExisting) {
       await conn.query(
         `UPDATE students SET 
-          name = ?, email = ?, phone = ?, college_id = ?, department_id = ?, 
-          year = ?, stream = ?, degree_type = ?, import_sequence = ?, updated_at = NOW() 
+          registration_number = ?, name = ?, email = ?, phone = ?, college_id = ?, department_id = ?, 
+          year = ?, stream = ?, degree_type = ?, import_sequence = COALESCE(?, import_sequence), updated_at = NOW() 
          WHERE id = ?`,
         [
-          computed.name, computed.email || null, computed.phone || null, collegeId, departmentId,
+          computed.registrationNumber, computed.name, computed.email || null, computed.phone || null, collegeId, departmentId,
           computed.year, stream, degreeType, computed.importSequence || null, studentId
         ]
       );
