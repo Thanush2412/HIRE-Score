@@ -13,10 +13,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import * as XLSX from "xlsx";
 import {
   Upload, FileSpreadsheet, Trash2, Award, TrendingUp, BarChart3, Search,
   CheckCircle2, Sparkles, UserCheck, Users, Layers, SlidersHorizontal, ArrowUpRight, ArrowDownRight, Activity, Brain, Calendar, HelpCircle,
-  Filter, ArrowUpDown, ArrowUp, ArrowDown, Columns, RotateCcw, Pencil, Eye, Check, Save, X
+  Filter, ArrowUpDown, ArrowUp, ArrowDown, Columns, RotateCcw, Pencil, Eye, Check, Save, X, Download
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend
@@ -960,6 +961,110 @@ export function NqtDashboard() {
 
   const matchedStudentCount = allStudents.filter(s => s.matchedDbStudent || (s.registrationNumber && s.email)).length;
 
+  const handleExport = (format: "xlsx" | "csv") => {
+    let filename = "";
+    let dataToExport: Record<string, any>[] = [];
+
+    if (activeTab === "students") {
+      filename = `NQT_All_Student_Records_${new Date().toISOString().slice(0, 10)}`;
+      dataToExport = filteredStudents.map((st, i) => ({
+        "S.No": i + 1,
+        "Registration Number": st.registrationNumber || "Unlinked",
+        "Student Name": st.name,
+        "Email Address": st.email || "",
+        "Department": st.department || "",
+        "College": st.college || "",
+        "Status / Assessment": st.assessmentName,
+        "Numerical Ability %": st.assessmentName === "Not Attempted" ? 0 : st.numerical,
+        "Verbal Ability %": st.assessmentName === "Not Attempted" ? 0 : st.verbal,
+        "Reasoning Ability %": st.assessmentName === "Not Attempted" ? 0 : st.reasoning,
+        "Adv Quant & Reasoning %": st.assessmentName === "Not Attempted" ? 0 : st.advQuant,
+        "Aptitude Avg %": st.assessmentName === "Not Attempted" ? 0 : st.aptitude,
+        "Coding %": st.assessmentName === "Not Attempted" ? 0 : st.coding,
+        "Overall Score %": st.assessmentName === "Not Attempted" ? 0 : st.overall,
+        "Attempts Count": st.attemptsCount || 0,
+      }));
+    } else if (activeTab === "consolidated") {
+      filename = `NQT_Consolidated_Progress_${new Date().toISOString().slice(0, 10)}`;
+      dataToExport = filteredConsolidated.map((st, i) => ({
+        "S.No": i + 1,
+        "Registration Number": st.registrationNumber || "No Reg No",
+        "Student Name": st.name,
+        "Email Address": st.email || "",
+        "Department": st.department || "",
+        "College": st.college || "",
+        "Tests Taken": st.attempts.length,
+        "Average Overall %": st.avgOverall,
+        "Latest Aptitude %": st.latestAptitude,
+        "Latest Coding %": st.latestCoding,
+        "Latest Overall %": st.latestOverall,
+        "First Test Overall %": st.firstOverall,
+        "Progress Delta %": st.attempts.length > 1 ? st.deltaOverall : 0,
+      }));
+    } else {
+      filename = `NQT_Assessment_Reports_${new Date().toISOString().slice(0, 10)}`;
+      dataToExport = filteredAssessments.map((item, i) => {
+        const aptAvg = item.aptitudeAvg || Math.round(((item.numericalAbilityAvg + item.verbalAbilityAvg + item.reasoningAbilityAvg + item.advancedQuantReasoningAvg) / 4) * 100) / 100;
+        return {
+          "S.No": i + 1,
+          "Assessment Name": item.assessmentName,
+          "College Display Name": getCollegeDisplayName(item),
+          "Conducted Count": item.assessmentsConducted,
+          "Total Students": item.students?.length || 0,
+          "Numerical Ability Avg %": item.numericalAbilityAvg,
+          "Verbal Ability Avg %": item.verbalAbilityAvg,
+          "Reasoning Ability Avg %": item.reasoningAbilityAvg,
+          "Adv Quant Avg %": item.advancedQuantReasoningAvg,
+          "Aptitude Avg %": aptAvg,
+          "Coding Avg %": item.codingAvg,
+          "Overall Avg %": item.overallAvg,
+          "Uploaded At": item.uploadedAt ? new Date(item.uploadedAt).toLocaleDateString() : "",
+        };
+      });
+    }
+
+    if (dataToExport.length === 0) {
+      alert("No data available to export.");
+      return;
+    }
+
+    if (format === "xlsx") {
+      const ws = XLSX.utils.json_to_sheet(dataToExport);
+      const colWidths = Object.keys(dataToExport[0]).map(key => {
+        const maxLen = Math.max(
+          key.length,
+          ...dataToExport.map(row => String(row[key] ?? "").length)
+        );
+        return { wch: Math.min(Math.max(maxLen + 2, 10), 40) };
+      });
+      ws["!cols"] = colWidths;
+
+      const wb = XLSX.utils.book_new();
+      const sheetName = activeTab === "students" ? "Student Records" : activeTab === "consolidated" ? "Consolidated Progress" : "Assessments";
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      XLSX.writeFile(wb, `${filename}.xlsx`);
+    } else {
+      const headers = Object.keys(dataToExport[0]);
+      const rows = dataToExport.map(row =>
+        headers.map(h => {
+          const val = row[h];
+          const str = val === null || val === undefined ? "" : String(val);
+          return `"${str.replace(/"/g, '""')}"`;
+        }).join(",")
+      );
+      const csvContent = [headers.join(","), ...rows].join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `${filename}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }
+  };
+
   return (
     <div className="space-y-6 pb-12">
       {/* Top Action Header */}
@@ -981,6 +1086,32 @@ export function NqtDashboard() {
             accept=".xlsx,.xls,.csv"
             className="hidden"
           />
+
+          <Popover>
+            <PopoverTrigger className="inline-flex items-center justify-center gap-1.5 font-semibold text-xs rounded-lg border bg-background px-3 py-2 hover:bg-muted transition-colors shadow-xs cursor-pointer">
+              <Download className="h-4 w-4 text-primary" />
+              Export Data
+            </PopoverTrigger>
+            <PopoverContent className="w-56 p-2 bg-popover rounded-xl shadow-xl border text-xs" align="end">
+              <div className="font-bold border-b pb-1.5 mb-1.5 px-2 text-foreground">
+                Export {activeTab === "students" ? "All Records" : activeTab === "consolidated" ? "Consolidated Progress" : "Assessment Reports"}
+              </div>
+              <button
+                onClick={() => handleExport("xlsx")}
+                className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted font-medium text-foreground cursor-pointer transition-colors"
+              >
+                <FileSpreadsheet className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                <span>Export to Excel (.xlsx)</span>
+              </button>
+              <button
+                onClick={() => handleExport("csv")}
+                className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted font-medium text-foreground cursor-pointer transition-colors"
+              >
+                <Download className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                <span>Export to CSV (.csv)</span>
+              </button>
+            </PopoverContent>
+          </Popover>
 
           <Button
             onClick={() => setMappingDialogOpen(true)}

@@ -154,3 +154,5 @@ temp/
 # Backup files
 *.bak
 *.backup
+components/nqt-dashboard.tsx
+Email_Table_Format.html
