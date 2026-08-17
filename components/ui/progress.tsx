@@ -25,7 +25,7 @@ function Progress({
   )
 }
 
-function ProgressTrack({ className, ...props }: ProgressPrimitive.Track.Props) {
+function ProgressTrack({ className, children, ...props }: ProgressPrimitive.Track.Props) {
   return (
     <ProgressPrimitive.Track
       className={cn(
@@ -34,7 +34,9 @@ function ProgressTrack({ className, ...props }: ProgressPrimitive.Track.Props) {
       )}
       data-slot="progress-track"
       {...props}
-    />
+    >
+      {children}
+    </ProgressPrimitive.Track>
   )
 }
 

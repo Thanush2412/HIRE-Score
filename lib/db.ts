@@ -1049,6 +1049,20 @@ export async function getAllNqtAssessmentsFromDb(): Promise<any[]> {
   }
 }
 
+export async function deleteNqtAssessmentFromDb(idOrName: string): Promise<void> {
+  const pool = getPool();
+  const conn = await pool.getConnection();
+  try {
+    await ensureNqtTableExists(conn);
+    await conn.query(
+      `DELETE FROM nqt_assessments WHERE id = ? OR assessment_name = ? OR assessment_name LIKE ?`,
+      [idOrName, idOrName, `%${idOrName}%`]
+    );
+  } finally {
+    conn.release();
+  }
+}
+
 export async function updateStudentNqtScoresInDb(
   studentId: string,
   scores: {

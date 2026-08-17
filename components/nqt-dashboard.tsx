@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from "react";
+import * as XLSX from "xlsx";
 import { parseFpcNqtExcel, computeFpcNqtSummary } from "@/lib/nqt-parser";
 import { getStoredNqtAssessments, addNqtAssessments, saveNqtAssessments, deleteNqtAssessment, clearNqtAssessments } from "@/lib/nqt-store";
 import { FpcNqtAssessment, FpcNqtStudentResult } from "@/lib/nqt-types";
@@ -13,11 +14,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import * as XLSX from "xlsx";
 import {
-  Upload, FileSpreadsheet, Trash2, Award, TrendingUp, BarChart3, Search,
+  Upload, FileSpreadsheet, Download, Trash2, Award, TrendingUp, BarChart3, Search,
   CheckCircle2, Sparkles, UserCheck, Users, Layers, SlidersHorizontal, ArrowUpRight, ArrowDownRight, Activity, Brain, Calendar, HelpCircle,
-  Filter, ArrowUpDown, ArrowUp, ArrowDown, Columns, RotateCcw, Pencil, Eye, Check, Save, X, Download
+  Filter, ArrowUpDown, ArrowUp, ArrowDown, Columns, RotateCcw, Pencil, Eye, Check, Save, X, ChevronLeft, ChevronRight
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend
@@ -41,12 +41,12 @@ export interface NqtColDef {
 
 const NQT_COLUMNS: NqtColDef[] = [
   { key: "registrationNumber", label: "Reg Number" },
-  { key: "name",               label: "Student Name" },
-  { key: "email",              label: "Email Address" },
-  { key: "department",         label: "Dept / College" },
-  { key: "aptitude",           label: "Aptitude %" },
-  { key: "coding",             label: "Coding %" },
-  { key: "overall",            label: "Overall %" },
+  { key: "name", label: "Student Name" },
+  { key: "email", label: "Email Address" },
+  { key: "department", label: "Dept / College" },
+  { key: "aptitude", label: "Aptitude %" },
+  { key: "coding", label: "Coding %" },
+  { key: "overall", label: "Overall %" },
 ];
 
 function NqtColumnFilterPopoverContent({
@@ -169,8 +169,13 @@ interface DbStudentItem {
 }
 
 export function NqtDashboard() {
+  const [isMounted, setIsMounted] = useState(false);
   const [assessments, setAssessments] = useState<FpcNqtAssessment[]>([]);
   const [dbStudents, setDbStudents] = useState<DbStudentItem[]>([]);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
   const [activeTab, setActiveTab] = useState<"consolidated" | "students" | "assessments">("consolidated");
   const [search, setSearch] = useState("");
   const [isUploading, setIsUploading] = useState(false);
@@ -215,6 +220,9 @@ export function NqtDashboard() {
   // Pagination state
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(25);
+
+  // Chart Pagination state
+  const [chartPageIndex, setChartPageIndex] = useState<number>(0);
 
   // Reset page to 1 when filters or tabs change
   useEffect(() => {
@@ -282,7 +290,7 @@ export function NqtDashboard() {
           setDbStudents(list);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   const summary = computeFpcNqtSummary(assessments);
@@ -375,8 +383,8 @@ export function NqtDashboard() {
       const nNorm = normKey(dbSt.name);
 
       const attempts = (rNorm ? attemptsByReg.get(rNorm) : undefined) ||
-                       (eNorm ? attemptsByEmail.get(eNorm) : undefined) ||
-                       (nNorm ? attemptsByName.get(nNorm) : undefined) || [];
+        (eNorm ? attemptsByEmail.get(eNorm) : undefined) ||
+        (nNorm ? attemptsByName.get(nNorm) : undefined) || [];
 
       if (attempts.length > 0) {
         attempts.sort((a, b) => new Date(a.uploadedAt).getTime() - new Date(b.uploadedAt).getTime());
@@ -522,12 +530,38 @@ export function NqtDashboard() {
     const map = new Map<string, string>();
     const collegeGroups = new Map<string, { id: string; ass: FpcNqtAssessment; date: number }[]>();
 
+    function normKey(val: unknown): string {
+      let s = String(val || "").trim().toLowerCase().replace(/[\s\-\._]/g, "");
+      if (s.endsWith(".0")) s = s.slice(0, -2);
+      return s;
+    }
+
+    const dbLookup = new Map<string, string>();
+    dbStudents.forEach(dbSt => {
+      if (dbSt.college) {
+        const rNorm = normKey(dbSt.registrationNumber);
+        const eNorm = normKey(dbSt.email);
+        const nNorm = normKey(dbSt.name);
+        if (rNorm) dbLookup.set(rNorm, dbSt.college.trim());
+        if (eNorm) dbLookup.set(eNorm, dbSt.college.trim());
+        if (nNorm) dbLookup.set(nNorm, dbSt.college.trim());
+      }
+    });
+
     assessments.forEach(ass => {
       let rawCollege = "";
       if (ass.students && ass.students.length > 0) {
         const counts: Record<string, number> = {};
         for (const st of ass.students) {
-          const col = (st.college || "").trim();
+          let col = (st.college || "").trim();
+          if (!col || col.toLowerCase() === "unspecified" || col.toLowerCase() === "unknown college") {
+            const rNorm = normKey(st.registrationNumber);
+            const eNorm = normKey(st.email);
+            const nNorm = normKey(st.name);
+            col = (rNorm ? dbLookup.get(rNorm) : undefined) ||
+                  (eNorm ? dbLookup.get(eNorm) : undefined) ||
+                  (nNorm ? dbLookup.get(nNorm) : undefined) || "";
+          }
           if (col && col.toLowerCase() !== "unspecified" && col.toLowerCase() !== "unknown college") {
             counts[col] = (counts[col] || 0) + 1;
           }
@@ -565,75 +599,47 @@ export function NqtDashboard() {
     });
 
     return map;
-  }, [assessments]);
+  }, [assessments, dbStudents]);
 
   const getCollegeDisplayName = (ass: FpcNqtAssessment): string => {
     return assessmentCollegeMap.get(ass.id) || ass.assessmentName;
   };
 
-  // Recharts Assessment Progress Trend dataset (Combined 1 entry per College)
+  // Recharts Assessment Progress Trend dataset (Individual entry per Assessment Report / Test)
   const chartData = useMemo(() => {
-    const collegeMap = new Map<string, {
-      aptitudeSum: number;
-      codingSum: number;
-      overallSum: number;
-      count: number;
-    }>();
-
-    assessments.forEach(ass => {
-      let rawCollege = "";
-      if (ass.students && ass.students.length > 0) {
-        const counts: Record<string, number> = {};
-        for (const st of ass.students) {
-          const col = (st.college || "").trim();
-          if (col && col.toLowerCase() !== "unspecified" && col.toLowerCase() !== "unknown college") {
-            counts[col] = (counts[col] || 0) + 1;
-          }
-        }
-        const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-        if (sorted.length > 0) rawCollege = sorted[0][0];
-      }
-
-      if (!rawCollege) {
-        const name = ass.assessmentName || "Assessment";
-        if (name.includes("SDNB")) rawCollege = "SDNB Vaishnav College";
-        else if (name.includes("Takshashila") || name.startsWith("TU")) rawCollege = "Takshashila University";
-        else if (name.includes("AMET")) rawCollege = "AMET University";
-        else if (name.includes("S-VYASA") || name.includes("VYASA")) rawCollege = "S-VYASA University";
-        else rawCollege = name.replace(/\.(xlsx|xls|csv)$/i, "").trim();
-      }
-
+    return assessments.map((ass, idx) => {
+      const fullCollegeName = getCollegeDisplayName(ass);
       const aptVal = ass.aptitudeAvg || Math.round(((ass.numericalAbilityAvg + ass.verbalAbilityAvg + ass.reasoningAbilityAvg + ass.advancedQuantReasoningAvg) / 4) * 100) / 100;
       const codingVal = ass.codingAvg || 0;
       const overallVal = ass.overallAvg || 0;
 
-      const existing = collegeMap.get(rawCollege) || { aptitudeSum: 0, codingSum: 0, overallSum: 0, count: 0 };
-      existing.aptitudeSum += aptVal;
-      existing.codingSum += codingVal;
-      existing.overallSum += overallVal;
-      existing.count += 1;
-      collegeMap.set(rawCollege, existing);
+      // Clean, readable label for XAxis tick display with Test Number preserved
+      let shortLabel = fullCollegeName;
+      shortLabel = shortLabel
+        .replace(/Vaishnav College of Arts & Science/i, "SDNB")
+        .replace(/Vaishnav College/i, "SDNB")
+        .replace(/Takshashila University/i, "Takshashila")
+        .replace(/University/i, "Univ")
+        .replace(/College/i, "Coll")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      return {
+        id: ass.id,
+        name: shortLabel,
+        fullName: `${fullCollegeName} — File: "${ass.assessmentName}" (${ass.students?.length || 0} students evaluated)`,
+        Aptitude: aptVal,
+        Coding: codingVal,
+        Overall: overallVal,
+      };
     });
+  }, [assessments, assessmentCollegeMap]);
 
-    const result: { name: string; fullName: string; Aptitude: number; Coding: number; Overall: number; count: number }[] = [];
-
-    collegeMap.forEach((data, collegeName) => {
-      const aptAvg = Math.round((data.aptitudeSum / data.count) * 100) / 100;
-      const codingAvg = Math.round((data.codingSum / data.count) * 100) / 100;
-      const overallAvg = Math.round((data.overallSum / data.count) * 100) / 100;
-
-      result.push({
-        name: collegeName,
-        fullName: `${collegeName} (${data.count} ${data.count === 1 ? 'Test Report' : 'Combined Test Reports'})`,
-        Aptitude: aptAvg,
-        Coding: codingAvg,
-        Overall: overallAvg,
-        count: data.count,
-      });
-    });
-
-    return result;
-  }, [assessments]);
+  const totalChartPages = Math.max(1, Math.ceil(chartData.length / 5));
+  const paginatedChartData = useMemo(() => {
+    const start = chartPageIndex * 5;
+    return chartData.slice(start, start + 5);
+  }, [chartData, chartPageIndex]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -693,13 +699,27 @@ export function NqtDashboard() {
     setPendingUploads(null);
   };
 
-  const handleDelete = (id: string) => {
-    const updated = deleteNqtAssessment(id);
-    setAssessments(updated);
+  const handleDelete = async (id: string, name?: string) => {
+    if (confirm(`Are you sure you want to delete assessment "${name || id}"?`)) {
+      try {
+        await fetch(`/api/nqt?id=${encodeURIComponent(id)}&name=${encodeURIComponent(name || "")}`, {
+          method: "DELETE",
+        });
+      } catch (e) {
+        console.error("Failed to delete assessment from API:", e);
+      }
+      const updated = deleteNqtAssessment(id);
+      setAssessments(updated);
+    }
   };
 
-  const handleClearAll = () => {
+  const handleClearAll = async () => {
     if (confirm("Are you sure you want to delete all FACE NQT records?")) {
+      try {
+        await fetch("/api/nqt?id=all", { method: "DELETE" });
+      } catch (e) {
+        console.error("Failed to clear DB:", e);
+      }
       clearNqtAssessments();
       setAssessments([]);
     }
@@ -959,118 +979,100 @@ export function NqtDashboard() {
     return filteredConsolidated.slice(start, start + pageSize);
   }, [filteredConsolidated, currentPage, pageSize]);
 
-  const matchedStudentCount = allStudents.filter(s => s.matchedDbStudent || (s.registrationNumber && s.email)).length;
-
-  const handleExport = (format: "xlsx" | "csv") => {
+  const handleExportData = (format: "excel" | "csv" = "excel") => {
+    let exportData: Record<string, any>[] = [];
     let filename = "";
-    let dataToExport: Record<string, any>[] = [];
+    const dateStr = new Date().toISOString().slice(0, 10);
 
     if (activeTab === "students") {
-      filename = `NQT_All_Student_Records_${new Date().toISOString().slice(0, 10)}`;
-      dataToExport = filteredStudents.map((st, i) => ({
-        "S.No": i + 1,
-        "Registration Number": st.registrationNumber || "Unlinked",
-        "Student Name": st.name,
-        "Email Address": st.email || "",
-        "Department": st.department || "",
-        "College": st.college || "",
-        "Status / Assessment": st.assessmentName,
-        "Numerical Ability %": st.assessmentName === "Not Attempted" ? 0 : st.numerical,
-        "Verbal Ability %": st.assessmentName === "Not Attempted" ? 0 : st.verbal,
-        "Reasoning Ability %": st.assessmentName === "Not Attempted" ? 0 : st.reasoning,
-        "Adv Quant & Reasoning %": st.assessmentName === "Not Attempted" ? 0 : st.advQuant,
-        "Aptitude Avg %": st.assessmentName === "Not Attempted" ? 0 : st.aptitude,
-        "Coding %": st.assessmentName === "Not Attempted" ? 0 : st.coding,
-        "Overall Score %": st.assessmentName === "Not Attempted" ? 0 : st.overall,
-        "Attempts Count": st.attemptsCount || 0,
+      filename = `NQT_Student_Records_${dateStr}`;
+      exportData = filteredStudents.map((s, idx) => ({
+        "S.No": idx + 1,
+        "Reg Number": s.registrationNumber || "",
+        "Student Name": s.name || "",
+        "Email": s.email || "",
+        "Department": s.department || "",
+        "College": s.college || "",
+        "Assessment Name": s.assessmentName || "",
+        "Aptitude %": s.aptitude ?? 0,
+        "Coding %": s.coding ?? 0,
+        "Overall %": s.overall ?? 0,
+        "Numerical": s.numerical ?? 0,
+        "Verbal": s.verbal ?? 0,
+        "Reasoning": s.reasoning ?? 0,
+        "Adv Quant": s.advQuant ?? 0,
+        "Attempts Count": s.attemptsCount ?? 0,
       }));
     } else if (activeTab === "consolidated") {
-      filename = `NQT_Consolidated_Progress_${new Date().toISOString().slice(0, 10)}`;
-      dataToExport = filteredConsolidated.map((st, i) => ({
-        "S.No": i + 1,
-        "Registration Number": st.registrationNumber || "No Reg No",
-        "Student Name": st.name,
-        "Email Address": st.email || "",
-        "Department": st.department || "",
-        "College": st.college || "",
-        "Tests Taken": st.attempts.length,
-        "Average Overall %": st.avgOverall,
-        "Latest Aptitude %": st.latestAptitude,
-        "Latest Coding %": st.latestCoding,
-        "Latest Overall %": st.latestOverall,
-        "First Test Overall %": st.firstOverall,
-        "Progress Delta %": st.attempts.length > 1 ? st.deltaOverall : 0,
+      filename = `NQT_Consolidated_Progress_${dateStr}`;
+      exportData = filteredConsolidated.map((s, idx) => ({
+        "S.No": idx + 1,
+        "Reg Number": s.registrationNumber || "",
+        "Student Name": s.name || "",
+        "Email": s.email || "",
+        "Department": s.department || "",
+        "College": s.college || "",
+        "Total Attempts": s.attempts ? s.attempts.length : 0,
+        "First Overall %": s.firstOverall ?? 0,
+        "Latest Overall %": s.latestOverall ?? 0,
+        "Latest Aptitude %": s.latestAptitude ?? 0,
+        "Latest Coding %": s.latestCoding ?? 0,
+        "Avg Overall %": s.avgOverall ?? 0,
+        "Avg Aptitude %": s.avgAptitude ?? 0,
+        "Avg Coding %": s.avgCoding ?? 0,
+        "Growth/Delta %": s.deltaOverall ?? 0,
       }));
     } else {
-      filename = `NQT_Assessment_Reports_${new Date().toISOString().slice(0, 10)}`;
-      dataToExport = filteredAssessments.map((item, i) => {
-        const aptAvg = item.aptitudeAvg || Math.round(((item.numericalAbilityAvg + item.verbalAbilityAvg + item.reasoningAbilityAvg + item.advancedQuantReasoningAvg) / 4) * 100) / 100;
-        return {
-          "S.No": i + 1,
-          "Assessment Name": item.assessmentName,
-          "College Display Name": getCollegeDisplayName(item),
-          "Conducted Count": item.assessmentsConducted,
-          "Total Students": item.students?.length || 0,
-          "Numerical Ability Avg %": item.numericalAbilityAvg,
-          "Verbal Ability Avg %": item.verbalAbilityAvg,
-          "Reasoning Ability Avg %": item.reasoningAbilityAvg,
-          "Adv Quant Avg %": item.advancedQuantReasoningAvg,
-          "Aptitude Avg %": aptAvg,
-          "Coding Avg %": item.codingAvg,
-          "Overall Avg %": item.overallAvg,
-          "Uploaded At": item.uploadedAt ? new Date(item.uploadedAt).toLocaleDateString() : "",
-        };
-      });
+      filename = `NQT_Assessment_Reports_${dateStr}`;
+      exportData = filteredAssessments.map((a, idx) => ({
+        "S.No": idx + 1,
+        "Assessment Name": a.assessmentName || "",
+        "Uploaded Date": a.uploadedAt ? new Date(a.uploadedAt).toLocaleDateString() : "",
+        "Assessments Conducted": a.assessmentsConducted || 1,
+        "Students Count": a.students?.length || 0,
+        "Aptitude Avg %": a.aptitudeAvg ?? 0,
+        "Coding Avg %": a.codingAvg ?? 0,
+        "Overall Avg %": a.overallAvg ?? 0,
+      }));
     }
 
-    if (dataToExport.length === 0) {
+    if (exportData.length === 0) {
       alert("No data available to export.");
       return;
     }
 
-    if (format === "xlsx") {
-      const ws = XLSX.utils.json_to_sheet(dataToExport);
-      const colWidths = Object.keys(dataToExport[0]).map(key => {
-        const maxLen = Math.max(
-          key.length,
-          ...dataToExport.map(row => String(row[key] ?? "").length)
-        );
-        return { wch: Math.min(Math.max(maxLen + 2, 10), 40) };
-      });
-      ws["!cols"] = colWidths;
-
-      const wb = XLSX.utils.book_new();
-      const sheetName = activeTab === "students" ? "Student Records" : activeTab === "consolidated" ? "Consolidated Progress" : "Assessments";
-      XLSX.utils.book_append_sheet(wb, ws, sheetName);
-      XLSX.writeFile(wb, `${filename}.xlsx`);
-    } else {
-      const headers = Object.keys(dataToExport[0]);
-      const rows = dataToExport.map(row =>
+    if (format === "csv") {
+      const headers = Object.keys(exportData[0]);
+      const rows = exportData.map(row =>
         headers.map(h => {
-          const val = row[h];
-          const str = val === null || val === undefined ? "" : String(val);
-          return `"${str.replace(/"/g, '""')}"`;
+          const val = row[h] === null || row[h] === undefined ? "" : String(row[h]);
+          return `"${val.replace(/"/g, '""')}"`;
         }).join(",")
       );
       const csvContent = [headers.join(","), ...rows].join("\n");
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.setAttribute("href", url);
-      link.setAttribute("download", `${filename}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${filename}.csv`;
+      a.click();
       URL.revokeObjectURL(url);
+    } else {
+      const ws = XLSX.utils.json_to_sheet(exportData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "NQT Data");
+      XLSX.writeFile(wb, `${filename}.xlsx`);
     }
   };
+
+  const matchedStudentCount = allStudents.filter(s => s.matchedDbStudent || (s.registrationNumber && s.email)).length;
 
   return (
     <div className="space-y-6 pb-12">
       {/* Top Action Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground flex items-center gap-2">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+        <div className="space-y-1 max-w-2xl">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground flex items-center gap-2">
             <Sparkles className="h-7 w-7 text-primary" /> FACE NQT Assessment Dashboard
           </h1>
           <p className="text-muted-foreground text-sm">
@@ -1078,7 +1080,7 @@ export function NqtDashboard() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap shrink-0 sm:ml-auto sm:self-start">
           <input
             type="file"
             ref={fileInputRef}
@@ -1088,8 +1090,8 @@ export function NqtDashboard() {
           />
 
           <Popover>
-            <PopoverTrigger className="inline-flex items-center justify-center gap-1.5 font-semibold text-xs rounded-lg border bg-background px-3 py-2 hover:bg-muted transition-colors shadow-xs cursor-pointer">
-              <Download className="h-4 w-4 text-primary" />
+            <PopoverTrigger className="inline-flex items-center justify-center gap-1.5 font-semibold text-xs rounded-lg border bg-background px-3 py-2 hover:bg-muted transition-colors shadow-xs cursor-pointer text-foreground">
+              <Download className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
               Export Data
             </PopoverTrigger>
             <PopoverContent className="w-56 p-2 bg-popover rounded-xl shadow-xl border text-xs" align="end">
@@ -1097,14 +1099,14 @@ export function NqtDashboard() {
                 Export {activeTab === "students" ? "All Records" : activeTab === "consolidated" ? "Consolidated Progress" : "Assessment Reports"}
               </div>
               <button
-                onClick={() => handleExport("xlsx")}
+                onClick={() => handleExportData("excel")}
                 className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted font-medium text-foreground cursor-pointer transition-colors"
               >
                 <FileSpreadsheet className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                 <span>Export to Excel (.xlsx)</span>
               </button>
               <button
-                onClick={() => handleExport("csv")}
+                onClick={() => handleExportData("csv")}
                 className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted font-medium text-foreground cursor-pointer transition-colors"
               >
                 <Download className="h-4 w-4 text-blue-600 dark:text-blue-400" />
@@ -1115,7 +1117,7 @@ export function NqtDashboard() {
 
           <Button
             onClick={() => setMappingDialogOpen(true)}
-            className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold shadow-md text-xs py-2"
+            className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold shadow-md text-xs py-2 rounded-lg"
           >
             <SlidersHorizontal className="h-4 w-4 mr-1.5" />
             Import NQT Data
@@ -1129,8 +1131,8 @@ export function NqtDashboard() {
         </div>
       )}
 
-      {/* Top Header Metrics Row — Featuring Assessments Conducted Prominently */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      {/* Top Header Metrics Row — 6 Symmetrical Cards */}
+      <div className="grid gap-4 grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
         <Card className="border-border bg-card shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Reports Uploaded</CardTitle>
@@ -1155,7 +1157,7 @@ export function NqtDashboard() {
               {summary.totalConducted}
             </div>
             <p className="text-xs text-indigo-600/80 dark:text-indigo-400/80 mt-1 font-medium">
-              Total tests conducted count
+              Total tests conducted
             </p>
           </CardContent>
         </Card>
@@ -1168,7 +1170,7 @@ export function NqtDashboard() {
           <CardContent>
             <div className="text-2xl font-bold">{consolidatedStudents.length}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              {evaluatedCount > 0 ? `${evaluatedCount} evaluated in NQT tests` : "Total students from Hire DB"}
+              {evaluatedCount > 0 ? `${evaluatedCount} evaluated` : "From Hire DB"}
             </p>
           </CardContent>
         </Card>
@@ -1186,12 +1188,23 @@ export function NqtDashboard() {
 
         <Card className="border-border bg-card shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Aptitude Combined Avg</CardTitle>
+            <CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Aptitude Avg</CardTitle>
             <Activity className="h-4 w-4 text-emerald-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{summary.aptitudeAvg}%</div>
-            <p className="text-xs text-muted-foreground mt-1">Num + Verb + Reas + AdvQuant</p>
+            <p className="text-xs text-muted-foreground mt-1">Num + Verb + Reas + Adv</p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border bg-card shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Coding Avg</CardTitle>
+            <Brain className="h-4 w-4 text-indigo-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{summary.codingAvg}%</div>
+            <p className="text-xs text-muted-foreground mt-1">Programming & DSA</p>
           </CardContent>
         </Card>
       </div>
@@ -1203,52 +1216,110 @@ export function NqtDashboard() {
             <TrendingUp className="h-5 w-5 text-primary" /> Module Performance Breakdown
           </CardTitle>
           <CardDescription>
-            Consolidated percentage score average per competency module (Numerical, Verbal, Reasoning, and Advanced Quant & Reasoning combined into Aptitude).
+            Consolidated percentage score average per competency module across all uploaded NQT test reports.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-6 md:grid-cols-3">
-          <div className="space-y-3 p-4 rounded-xl bg-indigo-500/5 border border-indigo-500/20 md:col-span-2">
-            <div className="flex justify-between items-center text-sm font-bold">
-              <span className="text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5 text-base">
-                <Brain className="h-5 w-5" /> Aptitude (Combined Numerical, Verbal, Reasoning & Adv Quant)
-              </span>
-              <span className="text-indigo-600 dark:text-indigo-400 text-xl font-black">{summary.aptitudeAvg}%</span>
+        <CardContent>
+          <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
+            <div className="p-4 rounded-xl bg-muted/30 border space-y-2">
+              <div className="flex justify-between items-center text-xs font-bold">
+                <span className="text-muted-foreground">Numerical Ability</span>
+                <span className="text-foreground text-sm font-black">{summary.numericalAbilityAvg}%</span>
+              </div>
+              <Progress value={summary.numericalAbilityAvg} className="h-2" />
+              <p className="text-[10px] text-muted-foreground">Quantitative math & problem solving</p>
             </div>
-            <Progress value={summary.aptitudeAvg} className="h-2.5 bg-indigo-500/20" />
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-muted-foreground pt-2 border-t border-indigo-500/10">
-              <div className="p-2 rounded bg-background/60 border">Numerical: <b className="text-foreground">{summary.numericalAbilityAvg}%</b></div>
-              <div className="p-2 rounded bg-background/60 border">Verbal: <b className="text-foreground">{summary.verbalAbilityAvg}%</b></div>
-              <div className="p-2 rounded bg-background/60 border">Reasoning: <b className="text-foreground">{summary.reasoningAbilityAvg}%</b></div>
-              <div className="p-2 rounded bg-background/60 border">Adv Quant: <b className="text-foreground">{summary.advancedQuantReasoningAvg}%</b></div>
-            </div>
-          </div>
 
-          <div className="space-y-3 p-4 rounded-xl bg-muted/30 border">
-            <div className="flex justify-between items-center text-sm font-bold">
-              <span className="text-foreground">Coding</span>
-              <span className="text-primary text-lg font-bold">{summary.codingAvg}%</span>
+            <div className="p-4 rounded-xl bg-muted/30 border space-y-2">
+              <div className="flex justify-between items-center text-xs font-bold">
+                <span className="text-muted-foreground">Verbal Ability</span>
+                <span className="text-foreground text-sm font-black">{summary.verbalAbilityAvg}%</span>
+              </div>
+              <Progress value={summary.verbalAbilityAvg} className="h-2" />
+              <p className="text-[10px] text-muted-foreground">English grammar & comprehension</p>
             </div>
-            <Progress value={summary.codingAvg} className="h-2.5" />
-            <p className="text-[11px] text-muted-foreground">Hands-on programming & DSA logic</p>
+
+            <div className="p-4 rounded-xl bg-muted/30 border space-y-2">
+              <div className="flex justify-between items-center text-xs font-bold">
+                <span className="text-muted-foreground">Reasoning Ability</span>
+                <span className="text-foreground text-sm font-black">{summary.reasoningAbilityAvg}%</span>
+              </div>
+              <Progress value={summary.reasoningAbilityAvg} className="h-2" />
+              <p className="text-[10px] text-muted-foreground">Logical & analytical reasoning</p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-muted/30 border space-y-2">
+              <div className="flex justify-between items-center text-xs font-bold">
+                <span className="text-muted-foreground">Adv. Quant & Reasoning</span>
+                <span className="text-foreground text-sm font-black">{summary.advancedQuantReasoningAvg}%</span>
+              </div>
+              <Progress value={summary.advancedQuantReasoningAvg} className="h-2" />
+              <p className="text-[10px] text-muted-foreground">Advanced math & data analysis</p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/20 space-y-2 col-span-2 sm:col-span-1">
+              <div className="flex justify-between items-center text-xs font-bold">
+                <span className="text-indigo-600 dark:text-indigo-400">Hands-on Coding</span>
+                <span className="text-indigo-600 dark:text-indigo-400 text-sm font-black">{summary.codingAvg}%</span>
+              </div>
+              <Progress value={summary.codingAvg} className="h-2 bg-indigo-500/20" />
+              <p className="text-[10px] text-indigo-600/80 dark:text-indigo-400/80">Programming logic & DSA</p>
+            </div>
           </div>
         </CardContent>
       </Card>
 
       {/* Assessment Trend Chart */}
-      {assessments.length > 1 && (
+      {isMounted && chartData && chartData.length > 0 && (
         <Card className="border-border bg-card shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-lg font-bold flex items-center gap-2">
-              <BarChart3 className="h-5 w-5 text-indigo-500" /> Assessment Comparison & Progress Trend
-            </CardTitle>
-            <CardDescription>
-              Combined performance comparison across colleges from all uploaded NQT test reports.
-            </CardDescription>
+          <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <CardTitle className="text-lg font-bold flex items-center gap-2">
+                <BarChart3 className="h-5 w-5 text-indigo-500" /> Assessment Comparison & Progress Trend
+              </CardTitle>
+              <CardDescription>
+                Combined performance comparison across colleges and test reports from all uploaded NQT test files.
+              </CardDescription>
+            </div>
+
+            {/* Navigation Arrows for College Graphs */}
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs text-muted-foreground font-medium">
+                {chartData.length <= 5
+                  ? `${chartData.length} ${chartData.length === 1 ? 'College' : 'Colleges'}`
+                  : `Showing ${chartPageIndex * 5 + 1} - ${Math.min((chartPageIndex + 1) * 5, chartData.length)} of ${chartData.length}`}
+              </span>
+
+              {chartData.length > 5 && (
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 w-8 p-0 rounded-lg cursor-pointer"
+                    disabled={chartPageIndex === 0}
+                    onClick={() => setChartPageIndex(p => Math.max(0, p - 1))}
+                    title="Previous Colleges"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 w-8 p-0 rounded-lg cursor-pointer"
+                    disabled={chartPageIndex >= totalChartPages - 1}
+                    onClick={() => setChartPageIndex(p => Math.min(totalChartPages - 1, p + 1))}
+                    title="Next Colleges"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             <div className="h-72 w-full pt-4">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 20 }}>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={paginatedChartData} margin={{ top: 10, right: 30, left: 0, bottom: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                   <YAxis domain={[0, 100]} unit="%" tick={{ fontSize: 12 }} />
@@ -1371,55 +1442,50 @@ export function NqtDashboard() {
 
             <button
               onClick={() => setPresetFilter("all")}
-              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                presetFilter === "all"
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${presetFilter === "all"
                   ? "bg-foreground text-background shadow-xs"
                   : "bg-background border text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
+                }`}
             >
               All Records ({allStudents.length})
             </button>
 
             <button
               onClick={() => setPresetFilter("attempted")}
-              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${
-                presetFilter === "attempted"
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${presetFilter === "attempted"
                   ? "bg-blue-600 text-white shadow-xs font-bold"
                   : "bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 hover:bg-blue-500/20"
-              }`}
+                }`}
             >
               <CheckCircle2 className="h-3 w-3" /> Attempted ({allStudents.filter(s => s.assessmentName !== "Not Attempted").length})
             </button>
 
             <button
               onClick={() => setPresetFilter("unattempted")}
-              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${
-                presetFilter === "unattempted"
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${presetFilter === "unattempted"
                   ? "bg-amber-600 text-white shadow-xs font-bold"
                   : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 hover:bg-amber-500/20"
-              }`}
+                }`}
             >
               <HelpCircle className="h-3 w-3" /> Not Attempted ({allStudents.filter(s => s.assessmentName === "Not Attempted").length})
             </button>
 
             <button
               onClick={() => setPresetFilter("top")}
-              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${
-                presetFilter === "top"
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${presetFilter === "top"
                   ? "bg-emerald-600 text-white shadow-xs font-bold"
                   : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20"
-              }`}
+                }`}
             >
               <Award className="h-3 w-3" /> Top Performers (≥60%) ({allStudents.filter(s => s.overall >= 60 && s.assessmentName !== "Not Attempted").length})
             </button>
 
             <button
               onClick={() => setPresetFilter("atRisk")}
-              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${
-                presetFilter === "atRisk"
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${presetFilter === "atRisk"
                   ? "bg-rose-600 text-white shadow-xs font-bold"
                   : "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 hover:bg-rose-500/20"
-              }`}
+                }`}
             >
               <TrendingUp className="h-3 w-3 rotate-180" /> At-Risk (&lt;40%) ({allStudents.filter(s => s.overall < 40 && s.assessmentName !== "Not Attempted").length})
             </button>
@@ -1427,11 +1493,10 @@ export function NqtDashboard() {
             {activeTab === "consolidated" && (
               <button
                 onClick={() => setPresetFilter("growth")}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${
-                  presetFilter === "growth"
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${presetFilter === "growth"
                     ? "bg-indigo-600 text-white shadow-xs font-bold"
                     : "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20"
-                }`}
+                  }`}
               >
                 <ArrowUpRight className="h-3 w-3" /> Growth (+%) ({consolidatedStudents.filter(s => s.attempts.length > 1 && s.deltaOverall > 0).length})
               </button>
@@ -1474,9 +1539,8 @@ export function NqtDashboard() {
 
                             <Popover>
                               <PopoverTrigger
-                                className={`p-1 rounded-md hover:bg-muted/80 transition-colors ${
-                                  isFiltered ? "text-primary bg-primary/10 border border-primary/20" : "text-muted-foreground/50 hover:text-foreground"
-                                }`}
+                                className={`p-1 rounded-md hover:bg-muted/80 transition-colors ${isFiltered ? "text-primary bg-primary/10 border border-primary/20" : "text-muted-foreground/50 hover:text-foreground"
+                                  }`}
                                 title={`Filter ${col.label}`}
                               >
                                 <Filter className="h-3 w-3" />
@@ -1806,7 +1870,17 @@ export function NqtDashboard() {
                             </span>
                           </TableCell>
 
-                          <TableCell className="text-right"></TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDelete(item.id, item.assessmentName)}
+                              className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer"
+                              title={`Delete assessment ${item.assessmentName}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
                         </TableRow>
                       );
                     })

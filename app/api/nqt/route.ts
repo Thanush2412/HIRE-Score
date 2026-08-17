@@ -190,4 +190,27 @@ export async function GET(req: NextRequest) {
   }
 }
 
+export async function DELETE(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id") || "";
+    const name = searchParams.get("name") || "";
+
+    const target = id || name;
+    if (!target) {
+      return NextResponse.json({ error: "Missing id or name parameter" }, { status: 400 });
+    }
+
+    const { deleteNqtAssessmentFromDb } = await import("@/lib/db");
+    await deleteNqtAssessmentFromDb(target);
+
+    if (id) await deleteNqtAssessmentFromDb(id);
+    if (name) await deleteNqtAssessmentFromDb(name);
+
+    return NextResponse.json({ success: true, message: `Deleted assessment ${target}` });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message || "Failed to delete assessment" }, { status: 500 });
+  }
+}
+
 
