@@ -154,5 +154,17 @@ temp/
 # Backup files
 *.bak
 *.backup
-components/nqt-dashboard.tsx
+
+# Scratch directory & helper scripts
+scratch/
+build_*.js
+sync_*.js
+update_*.js
+manual_*.js
+audit_*.js
+
+# HTML Reports
 Email_Table_Format.html
+
+
+
